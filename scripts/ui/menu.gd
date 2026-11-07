@@ -93,6 +93,15 @@ func _btn_off(r: Rect2, text: String) -> void:
 	_center(r.get_center().x, r.position.y + r.size.y - 5, "Coming soon", 11, Color("ffbf5e", 0.8), body)
 
 
+## Taller buttons for a thumb: on a phone 44 units is only 24 CSS pixels.
+func btn_h() -> float:
+	return 66.0 if Touch.on else 44.0
+
+
+func btn_y() -> float:
+	return size.y - (182.0 if Touch.on else 160.0)
+
+
 func _center(x: float, y: float, text: String, s: int, col: Color, f: Font = null) -> void:
 	var font := f if f != null else heading
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x
@@ -145,24 +154,24 @@ func _draw() -> void:
 	if in_lobby:
 		_draw_lobby(cx)
 	elif SOLO_ONLY:
-		_btn(Rect2(cx - 290, size.y - 160, 180, 44), "Play solo", func() -> void:
+		_btn(Rect2(cx - 290, btn_y(), 180, btn_h()), "Play solo", func() -> void:
 			Net.set_identity(name_edit.text, picked)
 			Net.solo()
 			Net.start_game())
-		_btn_off(Rect2(cx - 90, size.y - 160, 180, 44), "Host a game")
-		_btn_off(Rect2(cx + 110, size.y - 160, 180, 44), "Join")
+		_btn_off(Rect2(cx - 90, btn_y(), 180, btn_h()), "Host a game")
+		_btn_off(Rect2(cx + 110, btn_y(), 180, btn_h()), "Join")
 		draw_string(body, Vector2(cx - 290, size.y - 82), "Online co-op for up to 3 players is coming soon.", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, DIM)
 	else:
-		_btn(Rect2(cx - 290, size.y - 160, 180, 44), "Play solo", func() -> void:
+		_btn(Rect2(cx - 290, btn_y(), 180, btn_h()), "Play solo", func() -> void:
 			Net.set_identity(name_edit.text, picked)
 			Net.solo()
 			Net.start_game())
-		_btn(Rect2(cx - 90, size.y - 160, 180, 44), "Host a game", func() -> void:
+		_btn(Rect2(cx - 90, btn_y(), 180, btn_h()), "Host a game", func() -> void:
 			Net.set_identity(name_edit.text, picked)
 			status = Net.host()
 			if status == "":
 				in_lobby = true)
-		_btn(Rect2(cx + 110, size.y - 160, 180, 44), "Join", func() -> void:
+		_btn(Rect2(cx + 110, btn_y(), 180, btn_h()), "Join", func() -> void:
 			Net.set_identity(name_edit.text, picked)
 			status = Net.join(addr_edit.text)
 			if status == "":

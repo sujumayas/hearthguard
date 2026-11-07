@@ -65,6 +65,8 @@ func _ready() -> void:
 	# Follows by default: the preset says "free", but losing your hero in a
 	# horde is never fun. Y frees it, edge pan and arrows then move it.
 	cam_locked = true
+	if Touch.on:
+		zoom = 1.1
 	hud = Hud.new()
 	add_child(hud)
 	hud.setup(self)
@@ -390,7 +392,10 @@ func _camera(delta: float) -> void:
 	var vp := get_viewport()
 	var mouse := vp.get_mouse_position()
 	var size := vp.get_visible_rect().size
-	if Input.is_key_pressed(KEY_C) or cam_locked:
+	if Touch.on:
+		# Lead the camera a little the way the thumb is steering.
+		cam_pos = cam_pos.lerp(ctrl.pos + ctrl.stick * 90.0, minf(1.0, delta * 8.0))
+	elif Input.is_key_pressed(KEY_C) or cam_locked:
 		var look := (get_global_mouse_position() - ctrl.pos) * 0.12
 		cam_pos = cam_pos.lerp(ctrl.pos + look, minf(1.0, delta * 8.0))
 	else:
@@ -418,6 +423,8 @@ func _camera(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if hud.blocks_input():
 		return
+	if Touch.on and event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
+		return  # A finger: the HUD's touch pad handles it.
 	if event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:

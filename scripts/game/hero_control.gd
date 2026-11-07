@@ -55,6 +55,11 @@ var click_fx: Array = []
 ## True while S is held: the hero drops every order and ignores mobs, so you
 ## can walk to the Alchemist through a fight. On release it stands ready.
 var stand_down := false
+## Touch: the joystick's direction (zero when no thumb is on it), and the
+## ability being aimed by a drag with where it points (`touch_at`).
+var stick := Vector2.ZERO
+var touch_aim := -1
+var touch_at := Vector2.ZERO
 
 
 func setup(g: Node, m: MapData, v: View, s: int, c: String) -> void:
@@ -189,6 +194,94 @@ func unhandled_input(event: InputEvent, world_mouse: Vector2) -> bool:
 	return false
 
 
+# --- Touch -----------------------------------------------------------------------
+
+## The joystick. A thumb on it is a move order that ignores mobs, so it also
+## does what S does on a keyboard; letting go leaves the hero ready to fight.
+func set_stick(v: Vector2) -> void:
+	if v.length() > 0.18:
+		if stick == Vector2.ZERO:
+			_cancel_backswing()
+			target = -1
+			amove_armed = false
+		stick = v.limit_length(1.0)
+	elif stick != Vector2.ZERO:
+		stick = Vector2.ZERO
+		if order == Order.MOVE:
+			order = Order.IDLE
+			path = PackedVector2Array()
+
+
+## A tap on the field: attack the mob under the finger, or walk there.
+func tap_world(at: Vector2) -> void:
+	var id := view.mob_at(at)
+	if id < 0:
+		id = view.nearest_mob(at, 48.0)
+	if id >= 0:
+		_order_attack(id, false)
+		_click(view.mob_pos(id), Color("ff6a3d"))
+	else:
+		_order_move(at)
+		_click(at, Color("5ad06a"))
+
+
+## The attack button: the nearest mob in a generous reach, bosses and elites
+## first when they're close.
+func attack_nearest() -> bool:
+	if not alive:
+		return false
+	var reach := maxf(acquire_reach() * 1.6, 320.0)
+	var id := view.nearest_mob(pos, reach)
+	if id < 0:
+		Sfx.play("denied", 0.4)
+		return false
+	_order_attack(id, false)
+	_click(view.mob_pos(id), Color("ff6a3d"))
+	return true
+
+
+func cast_range(i: int) -> float:
+	return CAST_RANGE.get(ability_id(i), 0.0)
+
+
+func is_self_cast(i: int) -> bool:
+	return CAST_KIND[ability_id(i)] == "self"
+
+
+## Can slot i go now? Says why not, the same way a key press does.
+func ready_to_cast(i: int) -> bool:
+	if not alive:
+		return false
+	var ranks: Array = info.get("ranks", [0, 0, 0, 0])
+	if int(ranks[i]) <= 0:
+		game.toast("Not learned yet. Tap the gold + to learn it.")
+		Sfx.play("denied", 0.6)
+		return false
+	if local_cds[i] > 0.05:
+		Sfx.play("denied", 0.5)
+		return false
+	return true
+
+
+## A tap on an ability, no drag: self spells go off, aimed ones pick the
+## nearest mob in range, or go the way the hero is heading.
+func smart_target(i: int) -> Vector2:
+	var r := cast_range(i)
+	var id := view.nearest_mob(pos, r)
+	var fwd := stick.normalized() if stick != Vector2.ZERO else Vector2.from_angle(heading)
+	if ability_id(i) in ["blink", "tumble"]:
+		# Movement spells go where the thumb points, or away from the crowd.
+		return pos + fwd * r * 0.8
+	if id >= 0:
+		return view.mob_pos(id)
+	return pos + fwd * r * 0.6
+
+
+func touch_cast(i: int, at: Vector2) -> void:
+	if ready_to_cast(i):
+		_confirm_cast(i, at)
+
+
 func _stop() -> void:
 	order = Order.IDLE
 	path = PackedVector2Array()
@@ -317,6 +410,9 @@ func step(dt: float) -> void:
 		cast_anim += dt * 2.5
 		if cast_anim >= 1.0:
 			cast_anim = -1.0
+	if stick != Vector2.ZERO:
+		order = Order.MOVE
+		path = PackedVector2Array([pos + stick.normalized() * 60.0])
 	match order:
 		Order.IDLE, Order.HOLD:
 			moving = false
@@ -471,8 +567,12 @@ func draw_overlay(ci: CanvasItem, mouse: Vector2) -> void:
 		var pts := PackedVector2Array([pos])
 		pts.append_array(path)
 		ci.draw_polyline(pts, Color(1, 1, 1, 0.12), 2.0, true)
-	if targeting >= 0:
-		var id := ability_id(targeting)
+	var aim_slot := targeting
+	if touch_aim >= 0:
+		aim_slot = touch_aim
+		mouse = touch_at
+	if aim_slot >= 0:
+		var id := ability_id(aim_slot)
 		var r: float = CAST_RANGE.get(id, 400.0)
 		Kept.arc(ci, pos, r, 0.0, TAU, 64, Color(1, 1, 1, 0.25), 2.0, true)
 		var at := mouse

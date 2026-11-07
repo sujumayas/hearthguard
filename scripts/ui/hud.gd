@@ -38,6 +38,7 @@ var end_screen := {}
 var hits: Array = []
 var minimap_tex: ImageTexture
 var mouse := Vector2.ZERO
+var pad: TouchPad
 
 
 func setup(g: Node) -> void:
@@ -46,18 +47,38 @@ func setup(g: Node) -> void:
 	heading_font = load("res://assets/fonts/kanit.tres")
 	body_font = load("res://assets/fonts/outfit.tres")
 	root = Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	root.mouse_filter = Control.MOUSE_FILTER_PASS
 	root.draw.connect(_draw)
 	root.gui_input.connect(_gui_input)
 	add_child(root)
+	_fit()
 	_bake_minimap()
+	pad = TouchPad.new(self)
+	Touch.changed.connect(func(_on: bool) -> void: pad.reset())
+	get_window().focus_exited.connect(func() -> void: pad.reset())
 	help_open = true
 	get_tree().create_timer(9.0).timeout.connect(func() -> void: help_open = false)
 
 
+## On a phone the HUD draws bigger: the layer scales up and the Control
+## shrinks to match, so everything is laid out in the scaled units.
+func _fit() -> void:
+	var vs := root.get_viewport_rect().size
+	var s := Touch.hud_scale(vs.y)
+	scale = Vector2(s, s)
+	root.position = Vector2.ZERO
+	root.size = vs / s
+
+
+func _input(event: InputEvent) -> void:
+	if Touch.on and pad != null and pad.input(event):
+		get_viewport().set_input_as_handled()
+
+
 func _process(delta: float) -> void:
 	t += delta
+	_fit()
 	for arr: Array in [banners, callouts, toasts]:
 		for b: Dictionary in arr:
 			b["t"] = float(b["t"]) + delta
@@ -68,7 +89,8 @@ func _process(delta: float) -> void:
 		card["t"] = float(card["t"]) + delta
 		if float(card["t"]) > float(card["dur"]):
 			card = {}
-	mouse = root.get_local_mouse_position()
+	# No hover on a touch screen: the last tap would light buttons up.
+	mouse = Vector2(-1e5, -1e5) if Touch.on else root.get_local_mouse_position()
 	root.queue_redraw()
 
 
@@ -148,6 +170,8 @@ func _gui_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton) or not event.pressed:
 		return
 	var mb := event as InputEventMouseButton
+	if Touch.on and mb.device == InputEvent.DEVICE_ID_EMULATION:
+		return  # The touch pad already took the finger.
 	for i in range(hits.size() - 1, -1, -1):
 		var h: Array = hits[i]
 		if (h[0] as Rect2).has_point(mb.position):
@@ -165,11 +189,17 @@ func _draw() -> void:
 	_draw_top(size)
 	_draw_boss(size)
 	_draw_party()
-	_draw_bottom(size)
+	if Touch.on:
+		_draw_touch_bottom(size)
+		_draw_touch_buttons()
+	else:
+		_draw_bottom(size)
 	_draw_minimap(size)
 	_draw_banners(size)
 	_draw_card(size)
 	_draw_toasts(size)
+	if Touch.on:
+		pad.draw(size)
 	if talents_open:
 		_draw_talents(size)
 	if shop_open:
@@ -248,7 +278,7 @@ func _draw_call(r: Rect2, d: Dictionary) -> void:
 	var b := Rect2(r.end.x + 8, r.position.y + 8, 150, 58)
 	var lit: bool = b.has_point(mouse) and not mine
 	Kept.rect(root, b, Color("6a5a24") if lit else (Color("2f3a2a") if mine else Color("4a3f1c")))
-	var label := "Waiting %d/%d" % [calls.size(), need] if mine else "Call it  (Space)"
+	var label := "Waiting %d/%d" % [calls.size(), need] if mine else ("Call it" if Touch.on else "Call it  (Space)")
 	_text_c(b.get_center().x, b.position.y + 24, label, 16, BONE, body_font)
 	var gold: int = roundi(float(d.get("t", 0.0)) * Sim.RUSH_GOLD_PER_S * (1.0 + 0.7 * float(d.get("chapter", 0))))
 	_text_c(b.get_center().x, b.position.y + 46, "+%d gold" % gold, 14, GOLD, body_font)
@@ -476,7 +506,7 @@ func _draw_talents(size: Vector2) -> void:
 	var col: Color = c["color"]
 	var w := 820.0
 	var h := 560.0
-	var r := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 - h * 0.5 - 30, w, h)
+	var r := Rect2(size.x * 0.5 - w * 0.5, maxf(8.0, size.y * 0.5 - h * 0.5 - 30), w, h)
 	_panel(r, Color(0.08, 0.07, 0.11, 0.97))
 	_text(r.position + Vector2(20, 34), "%s talents" % c["name"], 24, col.lightened(0.3), heading_font)
 	_text(r.position + Vector2(20, 56), "One of three at levels 4, 8, 12, 16 and 20. Each one you take shows on your hero.",
@@ -508,8 +538,8 @@ func _draw_talents(size: Vector2) -> void:
 				var rr := row
 				var kk := k
 				_hit(cr, func() -> void: game.send_talent(rr, kk))
-	var close := Rect2(r.end.x - 40, r.position.y + 12, 28, 28)
-	_text_c(close.get_center().x, close.position.y + 22, "x", 22, BONE)
+	var close := Rect2(r.end.x - 52, r.position.y + 4, 48, 48)
+	_text_c(close.get_center().x, close.position.y + 34, "x", 26, BONE)
 	_hit(close, func() -> void: talents_open = false)
 
 
@@ -540,9 +570,15 @@ func _draw_shop(size: Vector2) -> void:
 			_tooltip(cr, pd["name"], pd["desc"])
 		var pid := id
 		_hit(cr, func() -> void: game.send_buy(pid))
+	var close := Rect2(r.end.x - 52, r.position.y + 4, 48, 48)
+	_text_c(close.get_center().x, close.position.y + 34, "x", 26, BONE)
+	_hit(close, func() -> void: shop_open = false)
 
 
 func _draw_help(size: Vector2) -> void:
+	if Touch.on:
+		_draw_touch_help(size)
+		return
 	var r := Rect2(size.x - 392, 150, 380, 346)
 	_panel(r, Color(0.08, 0.07, 0.11, 0.9))
 	var lines := ["Right-click: move, or attack a mob", "A + click: attack-move   H: hold position",
@@ -648,8 +684,11 @@ func _bake_minimap() -> void:
 
 func _draw_minimap(size: Vector2) -> void:
 	var m: MapData = game.map
-	var s := 200.0 / MapData.SIZE.x
+	var s := (150.0 if Touch.on else 200.0) / MapData.SIZE.x
 	var r := Rect2(size.x - 212, size.y - 182, MapData.SIZE.x * s, MapData.SIZE.y * s)
+	if Touch.on:
+		# Top right, under the page's full screen button: the thumbs own the bottom.
+		r.position = Vector2(size.x - r.size.x - 12, 84)
 	Kept.rect(root, r.grow(4), Color(0, 0, 0, 0.6))
 	root.draw_texture_rect(minimap_tex, r, false)
 	for lane in 3:
@@ -674,3 +713,82 @@ func _draw_minimap(size: Vector2) -> void:
 	Kept.rect(root, vr, Color(1, 1, 1, 0.6), false, 1.0, 0)
 	_hit(r, func() -> void:
 		game.cam_pos = (mouse - r.position) / s)
+
+
+# --- Touch layout -------------------------------------------------------------------
+
+## The phone version of the bottom bar: HP, XP, gold, the potion belt and the
+## talent and Alchemist buttons, in a strip between the thumbs.
+func _draw_touch_bottom(size: Vector2) -> void:
+	if me.is_empty():
+		return
+	var r := pad.strip_rect(size)
+	_panel(r)
+	var hp_r := Rect2(r.position + Vector2(12, 8), Vector2(262, 16))
+	_bar(hp_r, float(me["hp"]) / float(me["max_hp"]), Color("5ad06a") if me["alive"] else Color("444"))
+	_text(hp_r.position + Vector2(6, 13), "%d / %d" % [me["hp"], me["max_hp"]], 13, BONE)
+	_bar(Rect2(r.position + Vector2(12, 26), Vector2(262, 5)), float(me["xp"]) / maxf(1.0, float(me["xp_next"])), XP)
+	_text(r.position + Vector2(284, 24), "Lv %d" % me["level"], 17, GOLD, heading_font)
+	Kept.disc(root, r.position + Vector2(352, 17), 7.0, GOLD)
+	_text(r.position + Vector2(364, 24), str(me["gold"]), 17, GOLD, heading_font)
+	if not me["alive"]:
+		_text_c(r.get_center().x, r.position.y - 14, "Back in %d" % ceili(float(me["respawn"])), 20, Color("ff8a8a"))
+	if str(me["cls"]) == "flow":
+		_text(r.position + Vector2(284, -8), "Flow %d" % me["flow"], 15, GOLD, heading_font)
+	var belt: Array = me["belt"]
+	for i in 4:
+		var br := pad.potion_rect(size, i)
+		var down := ("potion%d" % i) in pad.pressed_fx.values()
+		Kept.rect(root, br, DUSK.lightened(0.15) if down else DUSK)
+		var b: Array = belt[i]
+		if str(b[0]) != "" and int(b[1]) > 0:
+			var pd := PotionDefs.get_def(b[0])
+			PotionArt.draw_symbol(root, PotionDefs.symbol(b[0]), br.get_center(), 13.0, pd["color"])
+			if int(b[1]) > 1:
+				_text(br.position + Vector2(br.size.x - 12, 14), str(b[1]), 13, BONE, heading_font)
+		Kept.rect(root, br, EDGE, false, 2.0)
+	var open_rows := _open_talent_rows()
+	var tb := Rect2(r.position.x + 224, r.position.y + 34, 100, 44)
+	var glow := open_rows > 0 and fmod(t, 1.0) < 0.6
+	Kept.rect(root, tb, GOLD.darkened(0.2) if glow else DUSK)
+	Kept.rect(root, tb, EDGE, false, 2.0)
+	_text_c(tb.get_center().x, tb.position.y + 28, "Talents" + (" !" if open_rows > 0 else ""), 16, INK if glow else BONE, body_font)
+	_hit(tb, func() -> void:
+		talents_open = not talents_open
+		shop_open = false)
+	var sb := Rect2(r.position.x + 330, r.position.y + 34, 100, 44)
+	Kept.rect(root, sb, DUSK)
+	Kept.rect(root, sb, EDGE, false, 2.0)
+	_text_c(sb.get_center().x, sb.position.y + 28, "Alchemist", 16, BONE, body_font)
+	_hit(sb, func() -> void:
+		shop_open = not shop_open
+		talents_open = false)
+
+
+## Menu and help, which a keyboard gets from Esc and F1. Under the party list.
+func _draw_touch_buttons() -> void:
+	var n := maxi(1, (state.get("heroes", {}) as Dictionary).size())
+	var y := 12.0 + 64.0 * n
+	var mb := Rect2(12, y, 48, 44)
+	_panel(mb)
+	root.draw_rect(Rect2(mb.position + Vector2(16, 12), Vector2(5, 20)), BONE)
+	root.draw_rect(Rect2(mb.position + Vector2(27, 12), Vector2(5, 20)), BONE)
+	_hit(mb, func() -> void: menu_open = not menu_open)
+	var hb := Rect2(68, y, 48, 44)
+	_panel(hb, Color(0.2, 0.17, 0.27, 0.92) if help_open else PANEL)
+	_text_c(hb.get_center().x, hb.position.y + 32, "?", 24, BONE)
+	_hit(hb, func() -> void: help_open = not help_open)
+
+
+func _draw_touch_help(_size: Vector2) -> void:
+	var n := maxi(1, (state.get("heroes", {}) as Dictionary).size())
+	var lines := ["Left thumb: drag anywhere on the left to move", "Tap the field: walk there, or attack a mob",
+		"Attack: hit the nearest mob", "Q W E R: tap to cast at the nearest mob,", "    or drag off the button to aim, then let go",
+		"Drag back onto the button to cancel", "Gold +: learn or rank up an ability", "Potions, Talents, Alchemist: tap",
+		"Call it: the next wave early, for gold", "Two fingers: pinch to zoom", "Hold your corridor. Keep the Hearth lit."]
+	var r := Rect2(12, 12.0 + 64.0 * n + 54.0, 400, 50 + lines.size() * 22)
+	_panel(r, Color(0.08, 0.07, 0.11, 0.9))
+	_text(r.position + Vector2(16, 30), "How to play", 20, BONE, heading_font)
+	for i in lines.size():
+		_text(r.position + Vector2(16, 56 + i * 22), lines[i], 14, Color(1, 1, 1, 0.82))
+	_hit(r, func() -> void: help_open = false)

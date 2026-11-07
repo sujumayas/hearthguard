@@ -53,6 +53,26 @@ The lab preset's "moba" scheme.
 | Wheel, arrows, screen edges | Zoom and pan |
 | F1 / Esc | Help / menu |
 
+### Touch (phones and tablets)
+
+The web build is played on phones first. Touch mode turns on for phones and tablets, and on any screen the moment a finger touches it. A real mouse click turns it off again. `?touch=1` in the address forces it on, for testing on a desktop. On a phone the HUD draws 1.2 times bigger (`Touch.hud_scale`), and the controls live in `scripts/ui/touch_pad.gd`.
+
+| Touch | Does |
+| --- | --- |
+| Left thumb, anywhere on the left | A floating joystick. Moving with it ignores mobs (like holding S); let go and the hero fights again |
+| Tap the field | Walk there, or attack the mob under the finger |
+| Attack (big red button) | Attack the nearest mob |
+| Q W E R round it | Tap to cast at the nearest mob in range (self spells go off at once). Drag off the button to aim, let go to cast. Drag back onto it to cancel |
+| Gold + on a skill | Learn or rank it up |
+| Bottom strip | HP, XP, gold, the potion belt (tap to drink), Talents and Alchemist. Tap outside an open panel to close it |
+| II / ? (under the party list) | Menu / help |
+| Call it (by the wave panel) | Next wave now, for gold |
+| Two fingers on the field | Pinch to zoom |
+
+### Full screen
+
+The web page has its own shell (`web/shell.html`) with a full screen button in the top right corner. It tries the standard API, then the WebKit, Firefox and old Edge names. Browsers only allow full screen from a tap or a key, so the page asks on the first tap and keeps asking on later taps until the browser agrees, then locks landscape where the browser allows it (Android Chrome). After that it stops asking, so a player who leaves full screen stays out until they press the button. Safari on iPhone has no full screen API: there the button explains how to add the game to the home screen, and the page carries the meta tags that make that copy open with no browser bars. Held upright, a phone shows "Turn your phone sideways".
+
 ## What comes from where
 
 ### The rts-playtest-lab preset

@@ -20,6 +20,7 @@ driver/output_latency.web=120
 Tuning="*res://scripts/autoload/tuning.gd"
 Sfx="*res://scripts/autoload/sfx.gd"
 Net="*res://scripts/autoload/net.gd"
+Touch="*res://scripts/autoload/touch.gd"
 
 [display]
 
