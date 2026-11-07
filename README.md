@@ -27,6 +27,8 @@ https://kingsfoil-hearthguard.netlify.app (Netlify project `kingsfoil-hearthguar
 
 To update it, export the web build, copy `deploy/netlify.toml` into `build/web`, and deploy that folder (`netlify deploy --dir=build/web --prod --site kingsfoil-hearthguard`, or through the Netlify connector).
 
+The touch build from this branch is at https://kingsfoil-hearthguard-mobile.netlify.app (Netlify project `kingsfoil-hearthguard-mobile`). Deploy it the same way with `--site kingsfoil-hearthguard-mobile`. The Netlify badge is turned off in both projects because it covered the Attack button.
+
 ## Play together
 
 - One player hosts from the desktop build (or `godot --path .`). The menu shows the host's address. The game listens on port 7350 (WebSocket).
