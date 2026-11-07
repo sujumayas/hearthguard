@@ -1,0 +1,115 @@
+{
+  "format": "rts-movement-lab/preset",
+  "version": 1,
+  "name": "Dota 2",
+  "baseId": "dota",
+  "diff": {
+    "combat.cooldownMs": 630,
+    "combat.windupMs": 0,
+    "combat.backswingMs": 400,
+    "juice.hitStopMs": 10,
+    "juice.damageNumbers": true
+  },
+  "config": {
+    "sim": {
+      "tickRate": 30,
+      "interpolate": true,
+      "timeScale": 1
+    },
+    "input": {
+      "scheme": "moba",
+      "latencyMs": 50,
+      "bufferMs": 150,
+      "castMode": "confirm",
+      "clickIndicator": "wc3",
+      "autoAcquire": true,
+      "acquireRange": 220,
+      "repeatMoveMs": 0
+    },
+    "movement": {
+      "model": "heading",
+      "speed": 100,
+      "timeToMaxMs": 0,
+      "timeToStopMs": 0,
+      "turn180Ms": 160,
+      "turnRampMs": 60,
+      "moveTurnLimitDeg": 12,
+      "arriveBraking": true,
+      "pathing": "smooth",
+      "collision": "soft",
+      "separation": 0.5,
+      "pushIdle": true,
+      "groupMove": "clump",
+      "groupSpeedMatch": false
+    },
+    "combat": {
+      "shape": "single",
+      "range": 200,
+      "damage": 30,
+      "cooldownMs": 630,
+      "windupMs": 0,
+      "backswingMs": 400,
+      "backswingCancel": true,
+      "windupCommit": false,
+      "moveWhileAttacking": false,
+      "attackMoveSpeedMult": 0.6,
+      "projectileSpeed": 330,
+      "cleaveArcDeg": 120,
+      "faceToleranceDeg": 11,
+      "chase": true
+    },
+    "abilities": {
+      "castPointMs": 350,
+      "castBackswingMs": 500,
+      "turnToCast": true,
+      "cooldownScale": 1,
+      "dashDistance": 180,
+      "dashTimeMs": 0,
+      "dashIFrames": true,
+      "aoeDelayMs": 600
+    },
+    "animation": {
+      "fps": 0,
+      "facings": 0,
+      "squash": 0.2,
+      "anticipation": 0.5,
+      "walkBob": 0.3,
+      "swingArc": false
+    },
+    "juice": {
+      "hitStopMs": 10,
+      "shake": 0.25,
+      "knockback": 0,
+      "flashMs": 50,
+      "damageNumbers": true,
+      "particles": 0.45,
+      "sound": true,
+      "volume": 0.5
+    },
+    "camera": {
+      "mode": "free",
+      "followLerp": 0.12,
+      "lookAhead": 0.1,
+      "edgePan": true,
+      "zoom": 1
+    },
+    "minions": {
+      "count": 2,
+      "control": "select",
+      "speedMult": 1.05,
+      "damageMult": 1,
+      "leash": 520
+    },
+    "scenario": {
+      "enemyBehavior": "lane-aggro",
+      "aggroRadius": 200,
+      "spawnRateMult": 1,
+      "enemyHpMult": 1,
+      "enemySpeedMult": 1,
+      "enemyDamageMult": 1,
+      "waveGapS": 12,
+      "heroHp": 700,
+      "heroRespawnS": 6
+    }
+  }
+}

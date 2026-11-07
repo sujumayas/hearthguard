@@ -1,0 +1,8 @@
+[gd_resource type="FontVariation" format=3]
+
+[ext_resource type="FontFile" path="res://assets/fonts/Kanit-Medium.ttf" id="1_ti0so"]
+
+[resource]
+base_font = ExtResource("1_ti0so")
+spacing_top = -3
+spacing_bottom = -1
