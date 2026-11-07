@@ -25,9 +25,11 @@ Screenshots come from `tests/shot.tscn` and `tests/menu_shot.tscn` (see Tests).
 
 https://kingsfoil-hearthguard.netlify.app (Netlify project `kingsfoil-hearthguard`, Kingsfoil Studios team). The web build is solo for now: Host and Join show "Coming soon" (`SOLO_ONLY` in `scripts/ui/menu.gd`, on for web exports).
 
-To update it, export the web build, copy `deploy/netlify.toml` into `build/web`, and deploy that folder (`netlify deploy --dir=build/web --prod --site kingsfoil-hearthguard`, or through the Netlify connector).
+Every push to `main` deploys it. The GitHub Actions workflow in `.github/workflows/deploy.yml` downloads Godot, exports the web build, adds `deploy/netlify.toml` and deploys `build/web` to that project. Netlify can't run Godot, so the project is not linked to the repo on Netlify's side. The workflow needs two repository secrets, `NETLIFY_AUTH_TOKEN` (a Netlify personal access token) and `NETLIFY_SITE_ID`. Without them it builds and skips the deploy.
 
-The touch build from this branch is at https://kingsfoil-hearthguard-mobile.netlify.app (Netlify project `kingsfoil-hearthguard-mobile`). Deploy it the same way with `--site kingsfoil-hearthguard-mobile`. The Netlify badge is turned off in both projects because it covered the Attack button.
+To deploy by hand, export the web build, copy `deploy/netlify.toml` into `build/web`, and run `netlify deploy --dir=build/web --prod --site kingsfoil-hearthguard`.
+
+The same build plays on phones and computers; see "Touch" below. https://kingsfoil-hearthguard-mobile.netlify.app holds the first touch build and is not updated. The Netlify badge is turned off in both projects because it covered the Attack button.
 
 ## Play together
 
@@ -53,11 +55,11 @@ The lab preset's "moba" scheme.
 | Space (or Enter) | Call the next wave now, during any countdown. Pays gold for each second skipped. In co-op every player has to call |
 | C / Y | Camera to your hero / switch between follow and free camera |
 | Wheel, arrows, screen edges | Zoom and pan |
-| F1 / Esc | Help / menu |
+| F1 / Esc, or the Menu and ? buttons under the party list | Help / menu |
 
 ### Touch (phones and tablets)
 
-The web build is played on phones first. Touch mode turns on for phones and tablets, and on any screen the moment a finger touches it. A real mouse click turns it off again. `?touch=1` in the address forces it on, for testing on a desktop. On a phone the HUD draws 1.2 times bigger (`Touch.hud_scale`), and the controls live in `scripts/ui/touch_pad.gd`.
+One build serves phones and computers. Touch mode turns on for phones and tablets, and on any screen the moment a finger touches it. A real mouse click turns it off again. The menu's Controls row can pin it to Touch or Mouse instead of Auto, and `?touch=1` in the address forces touch for one visit. On a phone the HUD draws 1.2 times bigger (`Touch.hud_scale`), and the controls live in `scripts/ui/touch_pad.gd`.
 
 | Touch | Does |
 | --- | --- |
@@ -71,9 +73,19 @@ The web build is played on phones first. Touch mode turns on for phones and tabl
 | Call it (by the wave panel) | Next wave now, for gold |
 | Two fingers on the field | Pinch to zoom |
 
+### The menu
+
+Esc, or the Menu button, opens it. In a solo game the match pauses while it is open; online it can't, so the menu only covers the screen. It has:
+
+- Sound on or off, and volume sliders for music, effects and buttons. Each has its own audio bus (`Music`, `SFX`, `UI`, made in `scripts/autoload/sfx.gd`).
+- Controls: Auto, Touch or Mouse.
+- Leave the game.
+
+The choices are kept in `user://settings.cfg`, which is the browser's storage on the web.
+
 ### Full screen
 
-The web page has its own shell (`web/shell.html`) with a full screen button in the top right corner. It tries the standard API, then the WebKit, Firefox and old Edge names. Browsers only allow full screen from a tap or a key, so the page asks on the first tap and keeps asking on later taps until the browser agrees, then locks landscape where the browser allows it (Android Chrome). After that it stops asking, so a player who leaves full screen stays out until they press the button. Safari on iPhone has no full screen API: there the button explains how to add the game to the home screen, and the page carries the meta tags that make that copy open with no browser bars. Held upright, a phone shows "Turn your phone sideways".
+The web page has its own shell (`web/shell.html`) with a full screen button in the top right corner. It tries the standard API, then the WebKit, Firefox and old Edge names. Browsers only allow full screen from a tap or a key, so on a phone or tablet the page asks on the first tap and keeps asking on later taps until the browser agrees, then locks landscape where the browser allows it (Android Chrome). After that it stops asking, so a player who leaves full screen stays out until they press the button. On a computer the page only goes full screen from the button. Safari on iPhone has no full screen API: there the button explains how to add the game to the home screen, and the page carries the meta tags that make that copy open with no browser bars. Held upright, a phone shows "Turn your phone sideways".
 
 ## What comes from where
 

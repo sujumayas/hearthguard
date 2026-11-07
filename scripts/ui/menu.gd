@@ -73,7 +73,7 @@ func _on_input(e: InputEvent) -> void:
 		for i in range(hits.size() - 1, -1, -1):
 			if (hits[i][0] as Rect2).has_point(e.position):
 				(hits[i][1] as Callable).call()
-				Sfx.play("click", 0.6)
+				Sfx.ui("click", 0.6)
 				return
 
 

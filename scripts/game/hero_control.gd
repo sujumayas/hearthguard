@@ -233,7 +233,7 @@ func attack_nearest() -> bool:
 	var reach := maxf(acquire_reach() * 1.6, 320.0)
 	var id := view.nearest_mob(pos, reach)
 	if id < 0:
-		Sfx.play("denied", 0.4)
+		Sfx.ui("denied", 0.4)
 		return false
 	_order_attack(id, false)
 	_click(view.mob_pos(id), Color("ff6a3d"))
@@ -255,10 +255,10 @@ func ready_to_cast(i: int) -> bool:
 	var ranks: Array = info.get("ranks", [0, 0, 0, 0])
 	if int(ranks[i]) <= 0:
 		game.toast("Not learned yet. Tap the gold + to learn it.")
-		Sfx.play("denied", 0.6)
+		Sfx.ui("denied", 0.6)
 		return false
 	if local_cds[i] > 0.05:
-		Sfx.play("denied", 0.5)
+		Sfx.ui("denied", 0.5)
 		return false
 	return true
 
@@ -306,10 +306,10 @@ func _press_ability(i: int, world_mouse: Vector2) -> void:
 	var ranks: Array = info.get("ranks", [0, 0, 0, 0])
 	if int(ranks[i]) <= 0:
 		game.toast("Not learned yet. Ctrl + %s to learn." % ["Q", "W", "E", "R"][i])
-		Sfx.play("denied", 0.6)
+		Sfx.ui("denied", 0.6)
 		return
 	if local_cds[i] > 0.05:
-		Sfx.play("denied", 0.5)
+		Sfx.ui("denied", 0.5)
 		return
 	var id: String = HeroClasses.ability(cls, i)["id"]
 	if CAST_KIND[id] == "self" or quick_cast:
@@ -330,7 +330,7 @@ func _confirm_cast(i: int, at: Vector2) -> void:
 		if tid < 0:
 			tid = view.nearest_mob(at, 160.0)
 		if tid < 0:
-			Sfx.play("denied", 0.5)
+			Sfx.ui("denied", 0.5)
 			return
 	var instant: bool = CAST_KIND[id] == "self"
 	casting = {"slot": i, "at": at, "tid": tid, "t": 0.12 if instant else Tuning.cast_point(), "id": id}

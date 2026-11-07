@@ -317,14 +317,14 @@ func _handle(ev: Array) -> void:
 					cam_pos = ctrl.pos
 			"denied":
 				if e[1] == my_slot:
-					Sfx.play("denied", 0.5)
+					Sfx.ui("denied", 0.5)
 			"cast":
 				var hp: Dictionary = view.heroes.get(e[1], {})
 				if not hp.is_empty() and e[1] != my_slot:
 					hp["cast_t"] = 0.0
 			"learn", "talent":
 				if e[1] == my_slot:
-					Sfx.play("click", 0.6)
+					Sfx.ui("click", 0.6)
 			"camp":
 				hud.open_shop(true)
 			"rush":

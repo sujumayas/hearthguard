@@ -39,11 +39,16 @@ var hits: Array = []
 var minimap_tex: ImageTexture
 var mouse := Vector2.ZERO
 var pad: TouchPad
+## The pause menu's sliders: key -> track rect, and the one being dragged.
+var sliders := {}
+var slider_key := ""
 
 
 func setup(g: Node) -> void:
 	game = g
 	layer = 10
+	# The menu pauses the match, and the HUD has to keep running to close it.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	heading_font = load("res://assets/fonts/kanit.tres")
 	body_font = load("res://assets/fonts/outfit.tres")
 	root = Control.new()
@@ -72,8 +77,42 @@ func _fit() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode == KEY_ESCAPE:
+		# Esc first cancels an aimed spell, which the hero control handles.
+		if menu_open or game.ctrl.targeting < 0 and not game.ctrl.amove_armed:
+			_escape()
+			get_viewport().set_input_as_handled()
+			return
+	if slider_key != "" and event is InputEventMouse and event.device != InputEvent.DEVICE_ID_EMULATION:
+		if event is InputEventMouseMotion:
+			slider_move((event as InputEventMouse).position / scale.x)
+		elif event is InputEventMouseButton and not event.pressed:
+			slider_end()
 	if Touch.on and pad != null and pad.input(event):
 		get_viewport().set_input_as_handled()
+
+
+func _escape() -> void:
+	if menu_open:
+		set_menu(false)
+	elif talents_open or shop_open or help_open:
+		talents_open = false
+		shop_open = false
+		help_open = false
+	else:
+		set_menu(true)
+
+
+## Opens or closes the pause menu. Solo, the match stops while it is open;
+## online it can't, so the menu just covers the screen.
+func set_menu(v: bool) -> void:
+	menu_open = v
+	slider_end()
+	if pad != null:
+		pad.reset()
+	if not Net.online:
+		get_tree().paused = v
 
 
 func _process(delta: float) -> void:
@@ -151,13 +190,6 @@ func unhandled_key(event: InputEvent) -> void:
 			help_open = not help_open
 		KEY_ENTER, KEY_KP_ENTER:
 			game.send_ready()
-		KEY_ESCAPE:
-			if talents_open or shop_open or help_open:
-				talents_open = false
-				shop_open = false
-				help_open = false
-			else:
-				menu_open = not menu_open
 
 
 # --- Clicks ----------------------------------------------------------------------
@@ -176,7 +208,9 @@ func _gui_input(event: InputEvent) -> void:
 		var h: Array = hits[i]
 		if (h[0] as Rect2).has_point(mb.position):
 			if mb.button_index == MOUSE_BUTTON_LEFT and (h[1] as Callable).is_valid():
+				mouse = mb.position
 				(h[1] as Callable).call()
+				Sfx.ui("click", 0.6)
 			root.accept_event()
 			return
 
@@ -189,9 +223,9 @@ func _draw() -> void:
 	_draw_top(size)
 	_draw_boss(size)
 	_draw_party()
+	_draw_menu_buttons()
 	if Touch.on:
 		_draw_touch_bottom(size)
-		_draw_touch_buttons()
 	else:
 		_draw_bottom(size)
 	_draw_minimap(size)
@@ -593,18 +627,93 @@ func _draw_help(size: Vector2) -> void:
 
 func _draw_menu(size: Vector2) -> void:
 	root.draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.55))
-	var r := Rect2(size.x * 0.5 - 160, size.y * 0.5 - 90, 320, 180)
-	_panel(r, Color(0.08, 0.07, 0.11, 0.97))
-	_text_c(r.get_center().x, r.position.y + 40, "Paused" if not Net.online else "Menu", 26, BONE)
-	var b1 := Rect2(r.position.x + 30, r.position.y + 64, 260, 40)
-	var b2 := Rect2(r.position.x + 30, r.position.y + 116, 260, 40)
-	Kept.rect(root, b1, DUSK.lightened(0.1) if b1.has_point(mouse) else DUSK)
-	Kept.rect(root, b2, Color("5a2a2a") if b2.has_point(mouse) else Color("3a2228"))
-	_text_c(b1.get_center().x, b1.position.y + 27, "Back to the fight", 17, BONE, body_font)
-	_text_c(b2.get_center().x, b2.position.y + 27, "Leave the game", 17, BONE, body_font)
 	_hit(Rect2(Vector2.ZERO, size), Callable())
-	_hit(b1, func() -> void: menu_open = false)
-	_hit(b2, func() -> void: Net.back_to_menu())
+	var w := 460.0
+	var h := 452.0
+	var r := Rect2(size.x * 0.5 - w * 0.5, maxf(8.0, size.y * 0.5 - h * 0.5), w, h)
+	_panel(r, Color(0.08, 0.07, 0.11, 0.97))
+	var x := r.position.x + 24
+	var inner := w - 48
+	var y := r.position.y
+	_text_c(r.get_center().x, y + 40, "Paused" if not Net.online else "Menu", 26, BONE)
+	var back := Rect2(x, y + 58, inner, 44)
+	_menu_button(back, "Back to the fight", false)
+	_hit(back, func() -> void: set_menu(false))
+	# Sound.
+	y += 124
+	_text(Vector2(x, y + 20), "Sound", 18, BONE, heading_font)
+	var tog := Rect2(r.end.x - 24 - 120, y, 120, 30)
+	_menu_button(tog, "On" if Sfx.sound_on else "Off", Sfx.sound_on)
+	_hit(tog, func() -> void: Sfx.set_sound_on(not Sfx.sound_on))
+	y += 38
+	for row: Array in [["music", "Music"], ["sfx", "Effects"], ["ui", "Buttons"]]:
+		_slider(row[0], row[1], Rect2(x, y, inner, 38))
+		y += 40
+	# Layout.
+	y += 10
+	_text(Vector2(x, y + 20), "Controls", 18, BONE, heading_font)
+	_text(Vector2(x + 96, y + 20), "Auto picks touch on phones and tablets", 13, DIM)
+	y += 30
+	var bw := (inner - 16) / 3.0
+	for i in 3:
+		var m: String = Touch.MODES[i]
+		var b := Rect2(x + i * (bw + 8), y, bw, 40)
+		_menu_button(b, ["Auto", "Touch", "Mouse"][i], Touch.mode == m)
+		_hit(b, func() -> void: Touch.set_mode(m))
+	y += 58
+	var leave := Rect2(x, y, inner, 40)
+	Kept.rect(root, leave, Color("5a2a2a") if leave.has_point(mouse) else Color("3a2228"))
+	_text_c(leave.get_center().x, leave.position.y + 27, "Leave the game", 17, BONE, body_font)
+	_hit(leave, func() -> void:
+		get_tree().paused = false
+		Net.back_to_menu())
+
+
+func _menu_button(b: Rect2, label: String, lit: bool) -> void:
+	var bg := GOLD.darkened(0.35) if lit else DUSK
+	Kept.rect(root, b, bg.lightened(0.1) if b.has_point(mouse) else bg)
+	Kept.rect(root, b, GOLD if lit else EDGE, false, 2.0)
+	_text_c(b.get_center().x, b.position.y + b.size.y * 0.5 + 6, label, 17, BONE, body_font)
+
+
+## One volume row: the name, a track to tap or drag, and the percent.
+func _slider(key: String, label: String, row: Rect2) -> void:
+	var on: bool = Sfx.sound_on
+	_text(row.position + Vector2(0, 25), label, 15, BONE if on else DIM)
+	var track := Rect2(row.position.x + 96, row.position.y + 15, row.size.x - 96 - 56, 8)
+	sliders[key] = track
+	var v: float = Sfx.levels[key]
+	root.draw_rect(track, Color(0, 0, 0, 0.6))
+	root.draw_rect(Rect2(track.position, Vector2(track.size.x * v, track.size.y)), GOLD if on else DIM)
+	var knob := Vector2(track.position.x + track.size.x * v, track.get_center().y)
+	Kept.disc(root, knob, 13.0 if Touch.on else 10.0, BONE if slider_key == key or knob.distance_to(mouse) < 14.0 else Color("d8d2c8"))
+	_text(Vector2(row.end.x - 46, row.position.y + 25), "%d%%" % roundi(v * 100.0), 14, DIM, body_font,
+		HORIZONTAL_ALIGNMENT_RIGHT, 46)
+	# A tall hit area, so a thumb can grab the thin track.
+	var area := Rect2(track.position.x - 14, row.position.y, track.size.x + 28, row.size.y)
+	_hit(area, func() -> void:
+		slider_key = key
+		slider_move(mouse))
+
+
+## Moves the slider being dragged to `p` (HUD units).
+func slider_move(p: Vector2) -> void:
+	if slider_key == "" or not sliders.has(slider_key):
+		return
+	var track: Rect2 = sliders[slider_key]
+	Sfx.set_level(slider_key, (p.x - track.position.x) / track.size.x)
+
+
+func slider_end() -> void:
+	if slider_key == "":
+		return
+	# A sample at the new level, then keep it.
+	if slider_key == "sfx":
+		Sfx.play("kill", 0.6)
+	elif slider_key == "ui":
+		Sfx.ui("click", 0.6)
+	slider_key = ""
+	Sfx.save_settings()
 
 
 func _draw_end(size: Vector2) -> void:
@@ -765,17 +874,21 @@ func _draw_touch_bottom(size: Vector2) -> void:
 		talents_open = false)
 
 
-## Menu and help, which a keyboard gets from Esc and F1. Under the party list.
-func _draw_touch_buttons() -> void:
+## Menu and help buttons under the party list, for a mouse or a thumb. A
+## keyboard also gets them from Esc and F1.
+func _draw_menu_buttons() -> void:
 	var n := maxi(1, (state.get("heroes", {}) as Dictionary).size())
 	var y := 12.0 + 64.0 * n
-	var mb := Rect2(12, y, 48, 44)
-	_panel(mb)
-	root.draw_rect(Rect2(mb.position + Vector2(16, 12), Vector2(5, 20)), BONE)
-	root.draw_rect(Rect2(mb.position + Vector2(27, 12), Vector2(5, 20)), BONE)
-	_hit(mb, func() -> void: menu_open = not menu_open)
-	var hb := Rect2(68, y, 48, 44)
-	_panel(hb, Color(0.2, 0.17, 0.27, 0.92) if help_open else PANEL)
+	var mb := Rect2(12, y, 48 if Touch.on else 122, 44)
+	_panel(mb, PANEL.lightened(0.08) if mb.has_point(mouse) else PANEL)
+	if Touch.on:
+		root.draw_rect(Rect2(mb.position + Vector2(16, 12), Vector2(5, 20)), BONE)
+		root.draw_rect(Rect2(mb.position + Vector2(27, 12), Vector2(5, 20)), BONE)
+	else:
+		_text_c(mb.get_center().x, mb.position.y + 28, "Menu  (Esc)", 15, BONE, body_font)
+	_hit(mb, func() -> void: set_menu(not menu_open))
+	var hb := Rect2(mb.end.x + 8, y, 48, 44)
+	_panel(hb, Color(0.2, 0.17, 0.27, 0.92) if help_open or hb.has_point(mouse) else PANEL)
 	_text_c(hb.get_center().x, hb.position.y + 32, "?", 24, BONE)
 	_hit(hb, func() -> void: help_open = not help_open)
 

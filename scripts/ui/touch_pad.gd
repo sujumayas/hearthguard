@@ -143,7 +143,7 @@ func _press(idx: int, p: Vector2, raw: Vector2) -> void:
 			hud.mouse = p
 			if (h[1] as Callable).is_valid():
 				(h[1] as Callable).call()
-				Sfx.play("click", 0.5)
+				Sfx.ui("click", 0.5)
 			_button(idx, "hud")
 			return
 	if hud.blocks_input():
@@ -169,6 +169,8 @@ func _drag(idx: int, p: Vector2, _raw: Vector2) -> void:
 		return
 	var ctrl: HeroControl = game.ctrl
 	match f["kind"]:
+		"button":
+			hud.slider_move(p)
 		"stick":
 			var v := p - stick_base
 			if v.length() > STICK_R * 1.5:
@@ -206,6 +208,8 @@ func _release(idx: int, p: Vector2, raw: Vector2, canceled: bool) -> void:
 		return
 	var ctrl: HeroControl = game.ctrl
 	match f["kind"]:
+		"button":
+			hud.slider_end()
 		"stick":
 			ctrl.set_stick(Vector2.ZERO)
 		"aim":

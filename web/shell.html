@@ -344,10 +344,11 @@ body.is-fullscreen #fs-btn .fs-exit {
 		focusGame();
 	});
 
-	// The first tap, click or key anywhere asks for full screen, and the next
+	// On a phone or tablet the first tap asks for full screen, and the next
 	// ones too until the browser says yes. After that the page stops asking:
 	// someone who leaves full screen stays out until they press the button.
 	// touchend and pointerup count as a user gesture; touchstart doesn't.
+	// A computer (mouse and keyboard) only goes full screen from the button.
 	let pending = false;
 	function stopAsking() {
 		['touchend', 'pointerup', 'keydown'].forEach((ev) => window.removeEventListener(ev, firstGesture, true));
@@ -368,7 +369,8 @@ body.is-fullscreen #fs-btn .fs-exit {
 			}
 		});
 	}
-	if (supported && !standalone) {
+	const touchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1 && !window.matchMedia('(pointer: fine)').matches;
+	if (supported && !standalone && touchDevice) {
 		['touchend', 'pointerup', 'keydown'].forEach((ev) => window.addEventListener(ev, firstGesture, true));
 	}
 	sync();
