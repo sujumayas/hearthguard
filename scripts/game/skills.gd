@@ -654,14 +654,21 @@ static func drink(sim: Sim, h: HeroState, i: int, tp: Vector2) -> void:
 	sim.emit(["snd", def.get("sound", "potion"), 0.9])
 
 
+## The shop is open at the campfire, by the Hearth, and at the Alchemist's
+## door once it is built.
 static func can_shop(sim: Sim, h: HeroState) -> bool:
-	return sim.director.phase == Director.Phase.CAMP or h.pos.distance_to(MapData.HEARTH) < 340.0
+	return sim.director.phase == Director.Phase.CAMP or near_shop(h.pos, sim.town)
+
+
+static func near_shop(p: Vector2, town: Dictionary) -> bool:
+	return p.distance_to(MapData.HEARTH) < 340.0 \
+		or (TownDefs.level(town, "alchemist") > 0 and p.distance_to(TownDefs.door("alchemist")) < TownDefs.BUILD_R)
 
 
 static func buy(sim: Sim, h: HeroState, id: String) -> void:
 	if not PotionDefs.POTIONS.has(id) or not can_shop(sim, h):
 		return
-	var price: int = PotionDefs.get_def(id)["price"]
+	var price := TownDefs.potion_price(sim.town, id)
 	if h.gold < price:
 		sim.emit(["denied", h.slot])
 		return

@@ -26,6 +26,8 @@ var talents := ["", "", "", "", ""]
 var stats := {}
 var cds := [0.0, 0.0, 0.0, 0.0]
 var belt: Array = [["heal", 2], ["", 0], ["", 0], ["", 0]]
+## The Town's building levels (Sim.town, shared by every hero).
+var town := {}
 
 # Buffs and counters, in seconds or counts.
 var bloodlust_t := 0.0
@@ -82,7 +84,7 @@ var burn_src := ""
 
 func recompute() -> void:
 	var was_max := float(stats.get("max_hp", 0.0))
-	stats = HeroStats.compute(cls, level, talents)
+	stats = HeroStats.compute(cls, level, talents, town)
 	if was_max > 0.0:
 		hp += float(stats["max_hp"]) - was_max
 	hp = minf(hp, stats["max_hp"])

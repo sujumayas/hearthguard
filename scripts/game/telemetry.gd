@@ -79,6 +79,14 @@ func observe(ev: Array) -> Array:
 			"cast":
 				if casts.has(slot) and int(e[2]) >= 0 and int(e[2]) < 4:
 					casts[slot][e[2]] += 1
+			"build":
+				if h != null:
+					out.append(_rec(slot, "build", {"building": e[2], "level": e[3], "price": e[4], "gold_left": h.gold}))
+			"fire":
+				# e[1] is the fire's index here, not a slot: a match record.
+				out.append(_rec(-1, "road_fire", {"fire": e[1], "lit": e[2], "lane": e[3], "gone": e[4]}))
+			"dark":
+				out.append(_rec(-1, "dark", {"on": e[1]}))
 			"hearth":
 				hearth_lost += float(e[1])
 				hearth_hits += 1

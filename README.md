@@ -1,6 +1,6 @@
 # Hearthguard
 
-A co-op hero defense set in the world of MatchRPG (Ondoheer, Kingsfoil Studios). Everything the heroes went down to fight in MatchRPG is climbing up to the Town. One to three players hold the corridors and keep the Hearth lit through five chapters, one for each MatchRPG world, each ending with that world's boss.
+A co-op hero defense set in the world of MatchRPG (Ondoheer, Kingsfoil Studios). Everything the heroes went down to fight in MatchRPG is climbing up to the Town. One to three players hold the corridors and keep the Hearth lit through five chapters, one for each MatchRPG world, each ending with that world's boss. The Hearth stands in the middle of MatchRPG's whole Town, whose nine buildings the heroes build and level up with gold, and road fires burn along every corridor until the dark comes for them.
 
 Built with Godot 4.7, like MatchRPG, so its art code, sounds and fonts are used as they are.
 
@@ -18,6 +18,10 @@ Built with Godot 4.7, like MatchRPG, so its art code, sounds and fonts are used 
 | Flow cuts into the Drowned Temple's Horde (chapter 4). | The Mage's spells push a Caves pack under the execute line (chapter 3). |
 | ![The Fighter against Astaroth](docs/screenshots/fighter-astaroth.png) | ![The Archer in the Underground Forest](docs/screenshots/archer-forest.png) |
 | The Fighter against Astaroth while the lava rises (chapter 5). | The Archer holds the West Passage in the Underground Forest (chapter 1). |
+
+![The Town round the Hearth](docs/screenshots/town.png)
+
+The Town round the Hearth, some buildings levelled and the Alchemist not built yet, with its card open at the hero's feet.
 
 Screenshots come from `tests/shot.tscn` and `tests/menu_shot.tscn` (see Tests).
 
@@ -54,6 +58,7 @@ The lab preset's "moba" scheme.
 | Ctrl + Q W E R, or the gold "+" | Learn or rank up an ability |
 | 1 2 3 4 | Drink a potion from the belt |
 | T / B | Talents / the Alchemist (by the Hearth, or anywhere at the campfire) |
+| F | Build or level up the Town building whose door you stand at |
 | Space (or Enter) | Call the next wave now, during any countdown. Pays gold for each second skipped. In co-op every player has to call |
 | C / Y | Camera to your hero / switch between follow and free camera |
 | Wheel, arrows, screen edges | Zoom and pan |
@@ -73,6 +78,7 @@ One build serves phones and computers. Touch mode turns on for phones and tablet
 | Bottom strip | HP, XP, gold, the potion belt (tap to drink), Talents and Alchemist. Tap outside an open panel to close it |
 | II / ? (under the party list) | Menu / help |
 | Call it (by the wave panel) | Next wave now, for gold |
+| Build (on the building card) | Walk to a Town building's door, then tap to build or level it up |
 | Two fingers on the field | Pinch to zoom |
 
 ### The menu
@@ -124,7 +130,7 @@ Two choices differ from the preset, for feel. The camera follows your hero by de
 
 ### MatchRPG
 
-- **Art.** MatchRPG ships no image files: every hero, enemy and icon is drawn in GDScript. Those scripts are copied into `scripts/matchrpg/` and used as they are: `EnemyLook` and `EnemySprites` (all 42 creatures, elites and bosses), `HeroLook`, `HeroArt` and `HeroSprites` (the heroes, whose gear grows with each talent taken), `EnemyMissile` (thrown rocks, bones, bolts), `TalentIcon`, `TileIcon` and `IconShapes` (ability and talent icons), the potion symbols (`PotionArt`, taken from `PotionSlot`), and `Kept`. The changes are marked "Hearthguard" in the files: the Archer drawing and its bow (new, in the same hand), a bow "aim" pose, and small shims where MatchRPG's lookups (RowDefs, UiTheme) aren't here.
+- **Art.** MatchRPG ships no image files: every hero, enemy and icon is drawn in GDScript. Those scripts are copied into `scripts/matchrpg/` and used as they are: `EnemyLook` and `EnemySprites` (all 42 creatures, elites and bosses), `HeroLook`, `HeroArt` and `HeroSprites` (the heroes, whose gear grows with each talent taken), `EnemyMissile` (thrown rocks, bones, bolts), `BuildingIcon` (the Town's nine buildings and their ten levels of parts), `TalentIcon`, `TileIcon` and `IconShapes` (ability and talent icons), the potion symbols (`PotionArt`, taken from `PotionSlot`), and `Kept`. The changes are marked "Hearthguard" in the files: the Archer drawing and its bow (new, in the same hand), a bow "aim" pose, and small shims where MatchRPG's lookups (RowDefs, UiTheme) aren't here.
 - **Sound, music and fonts.** All of `assets/audio` (each world's calm, tense and boss music, the bosses' roars, hits, potions) and the Kanit and Outfit fonts.
 - **Lore and numbers.** The five worlds in order, their rosters, elites and bosses, names, colors, lore lines and sword/staff weaknesses (`MobDefs`, from `EnemyDefs` and `WorldDefs`), the world backdrops' palettes (`ChapterDefs`), the elites' and bosses' signature mechanics reworked as area moves (`Brains`), MatchRPG's potions on a four-slot belt (`PotionDefs`), its class names and branch colors, and its talent names.
 
@@ -147,6 +153,23 @@ Steps 9-11 (influence maps, adaptation, learned models) are left out. The study 
 
 ## The game
 
+- **The Town.** MatchRPG's nine buildings stand round the Hearth, drawn with its own `BuildingIcon` art (`TownDefs`). Seven stand in a row along the south with the town wall behind them, and one in each gap between the gates up north. Each starts as a dark, empty shape. Standing at its door opens its card, and gold (F, or the card's button) activates it and levels it up to 5. Every level adds the art's next parts, and level 5 wears MatchRPG's gold star. A level costs the building's base price times 1.7 for each level already built, 100 to 150 gold for the first and 835 to 1,255 for the fifth. The Town is shared: any hero pays, every hero gets the bonus.
+
+  | Building | Per level |
+  | --- | --- |
+  | Barracks | +5% max HP |
+  | Armory | +1.5 armor |
+  | Mage Tower | +5% ability damage |
+  | Forge | +5% damage |
+  | Tinker | Road fires +30% HP and kindle speed |
+  | Quarry | Hearth +12% max HP, and that much mended |
+  | Alchemist | Potions 8% off, and its door is a shop |
+  | Mint | +12% gold from kills and early calls |
+  | Woodcutter | Road fires heal 30% more |
+
+  MatchRPG's Tinker, Woodcutter and Quarry made traps fail and brought wood and stone, which this game has none of, so here they feed the road fires and the Hearth.
+- **Road fires.** Two small hearths burn in each open corridor, one in its chamber and one where its gate begins (`MapData.fire_spots`). They are drawn at 60% of the Hearth's fire. A mob that passes within 300 px of a lit fire leaves its march and bashes it until it goes out, and only a hit turns it on a hero. A fire has 1,400 HP in chapter 1, growing with the chapter's mob damage. A hero standing in a lit fire's ring (210 px) heals 3% of max HP a second, and mends the fire while no mob is in the ring. Holding an unlit fire's ring for 5 seconds, a hero in it and no mob, lights it again. Mobs alone in the ring undo the progress. The campfire between chapters relights them all.
+- **The dark.** When every road fire is out, night falls on the field: only the light round each hero, the Hearth and any lit fire shows through. One fire lit brings the day back. The Deep Wyrm's last phase puts out the lights too, until its chapter ends. At the start of chapter 4, the next-to-last world, the dark swallows the road fires for good, and chapters 4 and 5 are played in the dark (`Sim.dark_chapter`).
 - **Calling waves.** Every countdown (the intro, the 12 s gap, the campfire) can be cut short with Space. Each hero gets 2 gold a second skipped, times the chapter's gold multiplier.
 - **Auto-attack** picks up mobs within 105% of a ranged hero's reach and twice a melee hero's, so an idle hero doesn't run at mobs it hasn't met.
 - **Gold.** Kill gold grows 70% a chapter. Meteor (150), Aegis (240), Cataclysm (320) and Clone (160) cost enough to be a last resort.
@@ -163,7 +186,7 @@ Steps 9-11 (influence maps, adaptation, learned models) are left out. The study 
 
 | Path | What |
 | --- | --- |
-| `scripts/game/sim.gd` | The host's simulation: mobs, damage, the Hearth, snapshots |
+| `scripts/game/sim.gd` | The host's simulation: mobs, damage, the Hearth, the road fires, the dark, building, snapshots |
 | `scripts/game/director.gd` | Waves, hordes, campfire, victory |
 | `scripts/game/brains.gd` | Elites and world bosses |
 | `scripts/game/skills.gd` | Attacks, abilities, talent hooks, potions, the Alchemist |
@@ -171,7 +194,7 @@ Steps 9-11 (influence maps, adaptation, learned models) are left out. The study 
 | `scripts/game/game.gd` | The match: tick, network messages, camera |
 | `scripts/game/view.gd`, `map_view.gd` | Drawing the field |
 | `scripts/ui/hud.gd`, `menu.gd` | HUD, menu and lobby |
-| `scripts/data/` | Mobs, chapters, classes and talents, potions |
+| `scripts/data/` | Mobs, chapters, classes and talents, potions, the Town (`town_defs.gd`) |
 | `scripts/autoload/` | `Tuning` (the preset), `Sfx`, `Net` (lobby and connection) |
 | `scripts/matchrpg/` | MatchRPG's drawing code |
 
@@ -182,9 +205,12 @@ The host runs the only `Sim`. Each client moves its own hero and sends its posit
     godot --headless --path . res://tests/check_compile.tscn                    # every script compiles
     godot --headless --path . res://tests/sim_bot.tscn -- --cls=archer --minutes=60   # a bot plays the whole game
     godot --headless --path . res://tests/sim_bot.tscn -- --players=3 --cls=fighter,mage,archer --god
+    godot --headless --path . res://tests/sim_bot.tscn -- --cls=mage --build           # the bots also build the Town at each campfire
+    godot --headless --path . res://tests/town_test.tscn                               # the Town's and the road fires' rules
     godot --headless --path . res://tests/net_test.tscn -- --role=host --players=2    # then, in another shell:
     godot --headless --path . res://tests/net_test.tscn -- --role=client
     godot --path . res://tests/shot.tscn -- --cls=mage --chapter=3 --wave=3 --times=12   # screenshots to tests/shots
+    godot --path . res://tests/shot.tscn -- --cls=mage --times=10 --town=0 --at=2000,2330 --zoom=0.5   # the Town
     godot --path . res://tests/menu_shot.tscn                                            # the menu, to tests/shots/menu.png
 
-The bot stands at its gate, never dodges a telegraph, never chases a mob that walks past and never buys a potion, so its results are a floor for what a person does. Latest runs (after the threat-range change): a solo Mage bot wins all five chapters, Flow falls at the chapter 4 horde, the Archer at the chapter 3 horde, the Fighter at the chapter 3 boss, and a Fighter, Mage and Archer team at the chapter 4 boss. `--rush` makes the bot call every wave early. The host simulation costs about 0.3 ms a tick with three corridors of horde.
+The bot stays by its gate (it only fights mobs within 900 px of it), walks round the Town's buildings the way a click does, never dodges a telegraph, never relights a fire and never buys a potion, so its results are a floor for what a person does. Latest runs (with the Town and road fires), building the Town with `--build`: a Fighter, Mage and Archer team, a solo Fighter and a solo Mage win all five chapters, the Archer falls at the chapter 4 boss and Flow at the chapter 4 horde. Without building: the team falls at chapter 5's second elite, the Fighter at Astaroth, the Mage at chapter 5's second elite, Flow and the Archer at the chapter 3 boss. `--rush` makes the bot call every wave early. The host simulation costs about 0.2 ms a tick solo and 0.5 ms with three corridors.

@@ -2,6 +2,9 @@ extends Node
 ## Starts a solo game and saves screenshots, to look at the game without
 ## playing it.
 ##   godot --path . res://tests/shot.tscn -- --cls=archer --times=4,12,30 --speed=2 --chapter=0
+## --town=N builds every Town building to level N (0 leaves some unbuilt to
+## compare), --at=x,y puts the hero there, --zoom=z sets the camera's zoom,
+## --out=a,b puts out road fires a and b, --kindle=a holds fire a half lit.
 
 var times: Array = [4.0, 12.0, 30.0]
 var taken := 0
@@ -61,6 +64,32 @@ func _process(delta: float) -> void:
 							break
 	if OS.get_cmdline_user_args().has("--talents") and t > 2.0:
 		g.hud.talents_open = true
+	var args := {}
+	for a in OS.get_cmdline_user_args():
+		var kv := a.trim_prefix("--").split("=")
+		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	if g.sim != null and t < 1.0:
+		if args.has("town"):
+			var n := int(args["town"])
+			var ids := TownDefs.ids()
+			for i in ids.size():
+				g.sim.town[ids[i]] = n if n > 0 else [0, 1, 2, 3, 4, 5, 0, 2, 5][i]
+			for h: HeroState in g.sim.heroes.values():
+				h.recompute()
+				h.gold = 900
+		if args.has("at"):
+			var xy: PackedStringArray = str(args["at"]).split(",")
+			g.ctrl.teleport(Vector2(float(xy[0]), float(xy[1])))
+			g.cam_pos = g.ctrl.pos
+		if args.has("zoom"):
+			g.zoom = float(args["zoom"])
+	if g.sim != null and args.has("out"):
+		for a: String in str(args["out"]).split(","):
+			var f: Dictionary = g.sim.fires[int(a)]
+			if f["lit"]:
+				g.sim.hit_fire(int(a), 1e9)
+	if g.sim != null and args.has("kindle"):
+		g.sim.fires[int(args["kindle"])]["kindle"] = 0.55
 	if taken < times.size() and t >= float(times[taken]):
 		var img := get_viewport().get_texture().get_image()
 		var path := "res://tests/shots/%s_%d.png" % [cls, taken]

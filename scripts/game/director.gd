@@ -3,7 +3,8 @@ extends RefCounted
 ## Paces the waves. The AI study's director cycle, kept to pacing (never
 ## difficulty): Build Up (the wave spawns, in packs), Peak (it reaches the
 ## heroes), Relax (the gap, Tuning.wave_gap()). Between chapters, the Town's
-## campfire: heal, refill, buy potions. Each open corridor gets the whole
+## campfire: heal, refill, buy potions, relight the road fires (until the
+## dark of Sim.dark_chapter takes them). Each open corridor gets the whole
 ## wave; a corridor with no player sends nothing.
 
 enum Phase { INTRO, WAVE, GAP, CAMP, VICTORY }
@@ -70,7 +71,11 @@ func step(dt: float) -> void:
 				calls.clear()
 				phase = Phase.INTRO
 				t = INTRO_TIME
+				sim.rescale_fires()
 				_announce_chapter()
+				if chapter == Sim.dark_chapter():
+					# After the world's own banner: the dark takes the road.
+					sim.after(3.2, sim.snuff_fires)
 
 
 func _announce_chapter() -> void:
@@ -217,12 +222,16 @@ func _chapter_cleared() -> void:
 		return
 	phase = Phase.CAMP
 	t = CAMP_TIME
+	sim.boss_dark = false
+	sim.relight_fires()
 	sim.hearth_hp = minf(sim.hearth_max, sim.hearth_hp + sim.hearth_max * 0.5)
 	for h: HeroState in sim.heroes.values():
 		if h.alive:
 			h.hp = h.max_hp()
 		h.cds = [0.0, 0.0, 0.0, 0.0]
-	sim.emit(["banner", "The campfire", "Rest. The Alchemist is open for %d seconds." % int(CAMP_TIME), Color("f0a23c")])
+	var lit := chapter < Sim.dark_chapter()
+	sim.emit(["banner", "The campfire", ("Rest. The road fires burn again, and the Alchemist is open for %d seconds." if lit
+		else "Rest. The Alchemist is open for %d seconds.") % int(CAMP_TIME), Color("f0a23c")])
 	sim.emit(["music", "music_menu"])
 	sim.emit(["snd", "campfire", 1.0])
 	sim.emit(["camp", true])

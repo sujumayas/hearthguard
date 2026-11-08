@@ -188,6 +188,10 @@ func unhandled_key(event: InputEvent) -> void:
 			talents_open = false
 		KEY_F1:
 			help_open = not help_open
+		KEY_F:
+			var id := _building_here()
+			if id != "":
+				game.send_build(id)
 		KEY_ENTER, KEY_KP_ENTER:
 			game.send_ready()
 
@@ -229,6 +233,7 @@ func _draw() -> void:
 	else:
 		_draw_bottom(size)
 	_draw_minimap(size)
+	_draw_building_card(size)
 	_draw_banners(size)
 	_draw_card(size)
 	_draw_toasts(size)
@@ -301,6 +306,78 @@ func _draw_top(size: Vector2) -> void:
 	var hb := Rect2(r.position.x + 20, r.end.y - 14, r.size.x - 40, 8)
 	_bar(hb, hf, Color("f0a23c") if hf > 0.3 else Color("ff6a3d"))
 	_text(Vector2(hb.position.x, hb.position.y - 1), "Hearth", 11, Color(1, 1, 1, 0.6))
+	_draw_fire_marks(r)
+
+
+## The road fires under the wave panel: a flame for each, lit, out, or gone
+## to the dark, and the word when it is dark.
+func _draw_fire_marks(r: Rect2) -> void:
+	var fs: Array = state.get("fires", [])
+	if fs.is_empty():
+		return
+	var w := fs.size() * 26.0 + 64.0
+	var b := Rect2(r.get_center().x - w * 0.5, r.end.y + 6, w, 30)
+	var dark: bool = state.get("dark", false)
+	Kept.rect(root, b, Color(0.06, 0.05, 0.1, 0.85))
+	_text(b.position + Vector2(8, 20), "Dark" if dark else "Fires", 13, Color("b9a5ff") if dark else Color("ffd27a"), body_font)
+	for i in fs.size():
+		var f: Array = fs[i]
+		var c := b.position + Vector2(58 + i * 26, 22)
+		var st: int = f[1]
+		var col := Color("f0a23c") if st == 1 else (Color("4a4452") if st == 2 else Color("8a8494"))
+		var hgt := 16.0 if st == 1 else 8.0
+		if st == 0 and float(f[3]) > 0.0:
+			hgt = 8.0 + 8.0 * float(f[3])
+			col = Color("8a8494").lerp(Color("ffd27a"), float(f[3]))
+		root.draw_colored_polygon(PackedVector2Array([c + Vector2(-7, 0), c + Vector2(0, -hgt), c + Vector2(7, 0)]), col)
+		if st == 2:
+			root.draw_line(c + Vector2(-8, -12), c + Vector2(8, 2), Color("b9a5ff"), 2.0)
+
+
+## The Town building whose door the hero stands at, or "".
+func _building_here() -> String:
+	if me.is_empty() or not me.get("alive", false):
+		return ""
+	return TownDefs.near(game.ctrl.pos)
+
+
+## Standing at a building's door: what it gives, what the next level costs,
+## and a button (F) to pay for it.
+func _draw_building_card(size: Vector2) -> void:
+	var id := _building_here()
+	if id == "" or talents_open or shop_open:
+		return
+	var town: Dictionary = state.get("town", {})
+	var bd := TownDefs.get_def(id)
+	var lv := TownDefs.level(town, id)
+	var price := TownDefs.cost(town, id)
+	var gold := int(me.get("gold", 0))
+	var w := 460.0
+	var h := 112.0
+	var bottom := pad.strip_rect(size).position.y if Touch.on else size.y - 118.0
+	var r := Rect2(size.x * 0.5 - w * 0.5, bottom - h - 10.0, w, h)
+	Kept.rect(root, r.grow(2), Color(0, 0, 0, 0.5))
+	Kept.rect(root, r, Color(0.08, 0.07, 0.11, 0.95))
+	var icon := Rect2(r.position + Vector2(8, 8), Vector2(96, 96))
+	BuildingIcon.draw_building(root, id, icon, lv > 0, Color.TRANSPARENT, Color.TRANSPARENT, 0.0, lv * TownDefs.ART_STEP)
+	var x := r.position.x + 114
+	_text(Vector2(x, r.position.y + 28), bd["name"], 20, BONE, heading_font)
+	_text(Vector2(r.end.x - 132, r.position.y + 28), "Not built" if lv == 0 else "Level %d / %d" % [lv, TownDefs.MAX], 14,
+		GOLD if lv > 0 else DIM, body_font, HORIZONTAL_ALIGNMENT_RIGHT, 120)
+	_text(Vector2(x, r.position.y + 50), bd["desc"], 13, Color(1, 1, 1, 0.75), body_font, HORIZONTAL_ALIGNMENT_LEFT, w - 124)
+	if price < 0:
+		_text(Vector2(x, r.position.y + 88), "Fully built.", 16, GOLD, heading_font)
+		return
+	_text(Vector2(x, r.position.y + 72), ("Activate: " if lv == 0 else "Level %d: " % (lv + 1)) + TownDefs.next_text(town, id),
+		13, Color("ffd98a"), body_font)
+	var b := Rect2(x, r.position.y + 78, w - 124, 28)
+	var afford := gold >= price
+	Kept.rect(root, b, (Color("6a5a24") if b.has_point(mouse) else Color("4a3f1c")) if afford else Color(0.18, 0.16, 0.2))
+	var key := "" if Touch.on else "  (F)"
+	_text_c(b.get_center().x, b.position.y + 20, "%s for %d gold%s" % ["Build" if lv == 0 else "Level up", price, key], 15,
+		BONE if afford else DIM, body_font)
+	var bid := id
+	_hit(b, func() -> void: game.send_build(bid))
 
 
 ## The "call it early" button beside the wave panel: Space, with the gold
@@ -582,24 +659,27 @@ func _draw_shop(size: Vector2) -> void:
 	var h := 330.0
 	var r := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 - h * 0.5 - 40, w, h)
 	_panel(r, Color(0.08, 0.07, 0.11, 0.97))
-	var near: bool = game.ctrl.pos.distance_to(MapData.HEARTH) < 340.0
+	var town: Dictionary = state.get("town", {})
+	var near: bool = Skills.near_shop(game.ctrl.pos, town)
 	var d: Dictionary = state.get("dir", {})
 	var can := near or int(d.get("phase", -1)) == Director.Phase.CAMP
+	var where := "by the Hearth or the Alchemist's door" if TownDefs.level(town, "alchemist") > 0 else "by the Hearth"
 	_text(r.position + Vector2(20, 34), "The Alchemist", 24, Color("4fd1c5"), heading_font)
-	_text(r.position + Vector2(20, 56), "Open at the campfire, or by the Hearth." if can else "Come back to the Hearth to buy.",
+	_text(r.position + Vector2(20, 56), ("Open at the campfire, or " + where + ".") if can else "Come back to buy, " + where + ".",
 		14, DIM if can else Color("ff8a8a"))
 	_text(Vector2(r.end.x - 140, r.position.y + 34), "%d gold" % int(me.get("gold", 0)), 20, GOLD, heading_font)
 	for i in PotionDefs.SHOP.size():
 		var id: String = PotionDefs.SHOP[i]
 		var pd := PotionDefs.get_def(id)
 		var cr := Rect2(r.position.x + 20 + (i % 3) * 202, r.position.y + 72 + (i / 3) * 82, 192, 72)
-		var afford: bool = int(me.get("gold", 0)) >= int(pd["price"]) and can
+		var price := TownDefs.potion_price(town, id)
+		var afford: bool = int(me.get("gold", 0)) >= price and can
 		Kept.rect(root, cr, DUSK.lightened(0.08) if afford and cr.has_point(mouse) else DUSK)
 		Kept.rect(root, cr, EDGE, false, 2.0)
 		PotionArt.draw_symbol(root, PotionDefs.symbol(id), cr.position + Vector2(32, 36), 18.0,
 			pd["color"] if afford else Color(pd["color"], 0.35))
 		_text(cr.position + Vector2(62, 28), pd["name"], 15, BONE if afford else DIM, heading_font)
-		_text(cr.position + Vector2(62, 50), "%d gold" % pd["price"], 14, GOLD if afford else DIM)
+		_text(cr.position + Vector2(62, 50), "%d gold" % price, 14, GOLD if afford else DIM)
 		if cr.has_point(mouse):
 			_tooltip(cr, pd["name"], pd["desc"])
 		var pid := id
@@ -613,12 +693,14 @@ func _draw_help(size: Vector2) -> void:
 	if Touch.on:
 		_draw_touch_help(size)
 		return
-	var r := Rect2(size.x - 392, 150, 380, 346)
+	var r := Rect2(size.x - 392, 150, 380, 420)
 	_panel(r, Color(0.08, 0.07, 0.11, 0.9))
 	var lines := ["Right-click: move, or attack a mob", "A + click: attack-move   H: hold position",
 		"S (hold): stand down, to walk past a fight", "Q W E R: cast (click to aim, F2 quick cast)",
 		"Ctrl + Q W E R: learn an ability", "1 2 3 4: drink a potion", "T: talents   B: Alchemist",
-		"Space: call the next wave early, for gold", "C: camera to you   Y: lock camera", "Wheel: zoom   Arrows/edges: pan",
+		"Space: call the next wave early, for gold", "F: build at a Town building's door",
+		"C: camera to you   Y: lock camera", "Wheel: zoom   Arrows/edges: pan",
+		"Keep the road fires lit: they heal you.", "Hold an unlit fire's ring to light it.",
 		"Hold your corridor. Keep the Hearth lit.", "F1: hide this"]
 	_text(r.position + Vector2(16, 30), "How to play", 20, BONE, heading_font)
 	for i in lines.size():
@@ -804,6 +886,15 @@ func _draw_minimap(size: Vector2) -> void:
 		var p := r.position + MapData.portal(lane) * s
 		Kept.disc(root, p, 4.0, Color("8a7dff") if lane in game.active_lanes() else Color(0.3, 0.3, 0.3))
 	Kept.disc(root, r.position + MapData.HEARTH * s, 5.0, Color("f0a23c"))
+	var town: Dictionary = state.get("town", {})
+	for id: String in TownDefs.ids():
+		var built := TownDefs.level(town, id) > 0
+		var bp := r.position + TownDefs.foot(id) * s
+		root.draw_rect(Rect2(bp - Vector2(3, 3), Vector2(6, 6)), Color("ffd98a") if built else Color(0.45, 0.42, 0.5))
+	for f: Array in state.get("fires", []):
+		var st: int = f[1]
+		Kept.disc(root, r.position + (f[0] as Vector2) * s, 4.0,
+			Color("f0a23c") if st == 1 else (Color(0.25, 0.22, 0.3) if st == 2 else Color(0.6, 0.58, 0.66)))
 	for mob: Dictionary in game.view.mobs.values():
 		var col := Color("e04848")
 		var rad := 1.5
@@ -898,7 +989,9 @@ func _draw_touch_help(_size: Vector2) -> void:
 	var lines := ["Left thumb: drag anywhere on the left to move", "Tap the field: walk there, or attack a mob",
 		"Attack: hit the nearest mob", "Q W E R: tap to cast at the nearest mob,", "    or drag off the button to aim, then let go",
 		"Drag back onto the button to cancel", "Gold +: learn or rank up an ability", "Potions, Talents, Alchemist: tap",
-		"Call it: the next wave early, for gold", "Two fingers: pinch to zoom", "Hold your corridor. Keep the Hearth lit."]
+		"Call it: the next wave early, for gold", "Town buildings: walk to the door, tap Build",
+		"Road fires heal you. Stand in an unlit one's ring to light it", "Two fingers: pinch to zoom",
+		"Hold your corridor. Keep the Hearth lit."]
 	var r := Rect2(12, 12.0 + 64.0 * n + 54.0, 400, 50 + lines.size() * 22)
 	_panel(r, Color(0.08, 0.07, 0.11, 0.9))
 	_text(r.position + Vector2(16, 30), "How to play", 20, BONE, heading_font)

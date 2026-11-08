@@ -216,6 +216,8 @@ func _on_cmd(slot: int, cmd: String, args: Array) -> void:
 			Skills.drink(sim, h, int(args[0]), args[1])
 		"buy":
 			Skills.buy(sim, h, str(args[0]))
+		"build":
+			sim.build(h, str(args[0]))
 		"ready":
 			sim.director.call_wave(slot)
 
@@ -250,6 +252,10 @@ func send_drink(i: int, at: Vector2) -> void:
 
 func send_buy(id: String) -> void:
 	_send("buy", [id])
+
+
+func send_build(id: String) -> void:
+	_send("build", [id])
 
 
 func send_ready() -> void:
@@ -291,6 +297,7 @@ func _physics_process(_delta: float) -> void:
 
 func _apply_state(st: Dictionary) -> void:
 	state = st
+	view.dark = st.get("dark", view.dark)
 	var hs: Dictionary = st.get("heroes", {})
 	var looks: Dictionary = st.get("looks", {})
 	for s: int in hs:
@@ -362,6 +369,16 @@ func _handle(ev: Array) -> void:
 				hud.open_shop(true)
 			"rush":
 				hud.callout("Called early  +%d gold" % int(e[1]), Color("ffd98a"), 34.0)
+			"say":
+				hud.callout(e[1], e[2], 30.0)
+			"build":
+				var who: String = "You" if e[1] == my_slot else str(view.heroes.get(e[1], {}).get("name", "A player"))
+				var bname: String = TownDefs.get_def(e[2])["name"]
+				toast("%s %s the %s%s." % [who, "built" if int(e[3]) == 1 else "raised", bname,
+					"" if int(e[3]) == 1 else " to level %d" % int(e[3])])
+			"fire":
+				if not e[2] and not e[4]:
+					toast("A road fire in the %s went out." % MapData.CORRIDORS[int(e[3])]["name"])
 			"call":
 				if e[1] != my_slot:
 					toast("%s wants the next wave now (Space)." % str(view.heroes.get(e[1], {}).get("name", "A player")))
@@ -488,13 +505,18 @@ func _unhandled_input(event: InputEvent) -> void:
 func _draw_overlay() -> void:
 	ctrl.draw_overlay(overlay, get_global_mouse_position())
 	if view.dark:
-		# The Deep Wyrm's darkness: only the light round each hero.
+		# The dark (every road fire out, or the Deep Wyrm): only the light
+		# round each hero, the Hearth and any fire still lit.
 		var c := cam.get_screen_center_position()
 		var size := get_viewport_rect().size / cam.zoom
 		var r := Rect2(c - size * 0.5, size).grow(60)
 		var holes: Array = []
 		for hp: Dictionary in view.heroes.values():
-			holes.append(hp["pos"])
+			holes.append([hp["pos"], 260.0])
+		holes.append([MapData.HEARTH, 300.0 * lerpf(0.5, 1.0, hearth_frac())])
+		for f: Array in state.get("fires", []):
+			if int(f[1]) == 1:
+				holes.append([f[0], 240.0])
 		var step := 40.0
 		var y := r.position.y
 		while y < r.end.y:
@@ -502,9 +524,9 @@ func _draw_overlay() -> void:
 			while x < r.end.x:
 				var p := Vector2(x, y)
 				var d := INF
-				for h: Vector2 in holes:
-					d = minf(d, p.distance_to(h))
-				var a := clampf((d - 260.0) / 260.0, 0.0, 0.88)
+				for h: Array in holes:
+					d = minf(d, p.distance_to(h[0]) - float(h[1]))
+				var a := clampf(d / 260.0, 0.0, 0.88)
 				if a > 0.01:
 					overlay.draw_rect(Rect2(p, Vector2(step, step)), Color(0, 0, 0, a))
 				x += step

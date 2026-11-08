@@ -57,6 +57,18 @@ var blame := ""
 const RECENT_S := 6.0
 ## Kills in the last moment, per hero, for the multikill banners.
 var multikill := {}
+## The Town's building levels by id (TownDefs). Every HeroState holds this
+## same dictionary, so a level built shows in every hero's stats.
+var town := {}
+## The Hearth's max HP before the Quarry's walls.
+var hearth_base := HEARTH_HP
+## The road fires: two in each open corridor (MapData.fire_spots). Each is
+## {pos, lane, lit, gone, hp, max, kindle}. See "Road fires" below.
+var fires: Array = []
+## Night on the field: every road fire is out, or the Deep Wyrm put out the
+## lights (boss_dark, until its chapter ends).
+var dark := false
+var boss_dark := false
 
 
 func _init(seed_value: int, slots: Dictionary, shared_map: MapData = null) -> void:
@@ -70,14 +82,24 @@ func _init(seed_value: int, slots: Dictionary, shared_map: MapData = null) -> vo
 		h.name = p.get("name", "Hero")
 		h.cls = p.get("cls", "fighter")
 		h.pos = MapData.hero_start(slot)
+		h.town = town
 		h.recompute()
 		h.hp = h.max_hp()
 		h.tumble_charges = 1
 		heroes[slot] = h
 	players = maxi(1, heroes.size())
-	hearth_max = HEARTH_HP * (1.0 + 0.5 * (players - 1))
+	hearth_base = HEARTH_HP * (1.0 + 0.5 * (players - 1))
+	hearth_max = hearth_base
 	hearth_hp = hearth_max
+	var lanes: Array = heroes.keys()
+	lanes.sort()
+	for lane: int in lanes:
+		for at: Vector2 in MapData.fire_spots(lane):
+			fires.append({"pos": at, "lane": lane, "lit": true, "gone": false, "hp": 0.0, "max": 0.0, "kindle": 0.0})
 	director = Director.new(self)
+	rescale_fires()
+	for f: Dictionary in fires:
+		f["hp"] = f["max"]
 
 
 # --- The tick -------------------------------------------------------------
@@ -97,6 +119,7 @@ func step() -> void:
 	_separate()
 	Skills.step_projectiles(self)
 	_step_zones()
+	_step_fires()
 	_step_later()
 	if tick % 60 == 0:
 		_audit_tokens()
@@ -251,7 +274,7 @@ func _step_heroes() -> void:
 ## Gold per kill grows 70% a chapter (it was 100%): late chapters still pay
 ## more, but no longer enough to buy every potion on the shelf.
 func gold_mult() -> float:
-	return 1.0 + 0.7 * director.chapter
+	return (1.0 + 0.7 * director.chapter) * (1.0 + TownDefs.bonus(town, "gold"))
 
 
 ## Calling a wave early pays every hero for the seconds skipped.
@@ -726,6 +749,8 @@ func _step_mob(m: Mob) -> void:
 			_chase(m)
 		Mob.State.HEARTH:
 			_at_hearth(m)
+		Mob.State.FIRE:
+			_at_fire(m)
 		Mob.State.CHARGE_WIND:
 			m.charge_t -= DT
 			if m.charge_t <= 0.0:
@@ -785,7 +810,7 @@ func _provoke(m: Mob, slot: int) -> void:
 	if m.state == Mob.State.CHASE and m.target == slot:
 		m.provoke_t = PROVOKE_TIME
 		return
-	if m.state == Mob.State.MARCH or m.state == Mob.State.HEARTH or (m.state == Mob.State.CHASE and not m.token):
+	if m.state in [Mob.State.MARCH, Mob.State.HEARTH, Mob.State.FIRE] or (m.state == Mob.State.CHASE and not m.token):
 		_turn_on(m, slot)
 		# The pack turns with it: marching mobs close by come too.
 		for o: Mob in mobs_near(m.pos, PACK_CALL):
@@ -795,6 +820,7 @@ func _provoke(m: Mob, slot: int) -> void:
 
 func _turn_on(m: Mob, slot: int) -> void:
 	_release(m)
+	m.fire = -1
 	m.state = Mob.State.CHASE
 	m.target = slot
 	m.chase_t = 0.0
@@ -808,6 +834,11 @@ func _march(m: Mob) -> void:
 			m.state = Mob.State.CHASE
 			m.target = h.slot
 			m.chase_t = 0.0
+			return
+		var f := _fire_near(m)
+		if f >= 0:
+			m.state = Mob.State.FIRE
+			m.fire = f
 			return
 		if m.pos.distance_to(MapData.HEARTH) < HEARTH_R + m.radius + 30.0:
 			m.state = Mob.State.HEARTH
@@ -1070,6 +1101,206 @@ func living_count() -> int:
 	return n
 
 
+# --- Road fires ----------------------------------------------------------------
+# Small hearths along each corridor, like flags on the road. A lit fire draws
+# the mobs that pass within FIRE_NOTICE: they leave the march and bash it
+# until it goes out, and only a hit turns them on a hero. A hero standing in
+# a lit fire's ring (FIRE_ZONE) heals, and mends the fire while no mob is in
+# the ring. An unlit fire is relit by holding its ring: a hero in it and no
+# mob for KINDLE_S. When every fire is out, the dark comes. From the
+# next-to-last chapter (DARK_CHAPTER) the dark puts them out for good.
+
+const FIRE_R := 52.0
+const FIRE_ZONE := 210.0
+const FIRE_NOTICE := 300.0
+## A fire's HP in the first chapter; it grows with the chapter's mob damage.
+const FIRE_HP := 1400.0
+## A lit fire heals a hero in its ring this share of max HP a second, and
+## mends itself this share of its own while a hero holds the ring.
+const FIRE_HEAL := 0.03
+const FIRE_MEND := 0.03
+const KINDLE_S := 5.0
+## The chapter (0-based) whose start brings the dark for good: the
+## next-to-last world.
+static func dark_chapter() -> int:
+	return ChapterDefs.count() - 2
+
+
+func fire_max() -> float:
+	return FIRE_HP * ChapterDefs.atk_mult(director.chapter, 0) * (1.0 + TownDefs.bonus(town, "fire_hp"))
+
+
+## Sets every fire's max HP for the chapter and the Tinker, keeping its share.
+func rescale_fires() -> void:
+	var mx := fire_max()
+	for f: Dictionary in fires:
+		var frac := float(f["hp"]) / float(f["max"]) if float(f["max"]) > 0.0 else 1.0
+		f["max"] = mx
+		f["hp"] = mx * frac
+
+
+func _fire_near(m: Mob) -> int:
+	if m.rank == "boss":
+		return -1
+	for i in fires.size():
+		var f: Dictionary = fires[i]
+		if f["lit"] and m.pos.distance_to(f["pos"]) < FIRE_NOTICE:
+			return i
+	return -1
+
+
+func _at_fire(m: Mob) -> void:
+	var f: Dictionary = fires[m.fire] if m.fire >= 0 and m.fire < fires.size() else {}
+	if f.is_empty() or not f["lit"]:
+		m.fire = -1
+		m.wind = 0.0
+		m.state = Mob.State.MARCH
+		return
+	var at: Vector2 = f["pos"]
+	var d := m.pos.distance_to(at)
+	if d > FIRE_R + m.radius + 14.0:
+		_move(m, _steer(m, (at - m.pos) / maxf(d, 0.01)), 1.0)
+		return
+	m.flip = at.x > m.pos.x
+	m.atk_cd -= DT
+	if m.wind > 0.0:
+		m.wind -= DT
+		if m.wind <= 0.0:
+			var mult := 1.5 if m.enraged or float(m.brain.get("war_cry_t", 0.0)) > 0.0 else 1.0
+			hit_fire(m.fire, m.atk * mult)
+		return
+	if m.atk_cd <= 0.0:
+		_start_attack(m)
+
+
+func hit_fire(i: int, dmg: float) -> void:
+	var f: Dictionary = fires[i]
+	if not f["lit"]:
+		return
+	f["hp"] = float(f["hp"]) - dmg
+	emit(["fhit", i])
+	if float(f["hp"]) <= 0.0:
+		_fire_out(i)
+
+
+func _fire_out(i: int) -> void:
+	var f: Dictionary = fires[i]
+	f["lit"] = false
+	f["hp"] = 0.0
+	f["kindle"] = 0.0
+	emit(["fire", i, false, f["lane"], f["gone"]])
+	emit(["snd", "dark_take", 0.8])
+
+
+func _step_fires() -> void:
+	var lit_any := false
+	var heal_mult := 1.0 + TownDefs.bonus(town, "fire_heal")
+	var kindle_s := KINDLE_S / (1.0 + TownDefs.bonus(town, "fire_hp"))
+	for i in fires.size():
+		var f: Dictionary = fires[i]
+		if f["gone"]:
+			continue
+		var at: Vector2 = f["pos"]
+		var holders: Array = []
+		for h: HeroState in heroes.values():
+			if h.alive and h.pos.distance_to(at) < FIRE_ZONE:
+				holders.append(h)
+		var foes := count_near(at, FIRE_ZONE)
+		if f["lit"]:
+			lit_any = true
+			for h: HeroState in holders:
+				heal_hero(h, h.max_hp() * FIRE_HEAL * heal_mult * DT)
+			if not holders.is_empty() and foes == 0:
+				f["hp"] = minf(float(f["max"]), float(f["hp"]) + float(f["max"]) * FIRE_MEND * DT)
+			continue
+		var k: float = f["kindle"]
+		if not holders.is_empty() and foes == 0:
+			k += DT / kindle_s
+		elif holders.is_empty() and foes > 0:
+			k -= DT / (kindle_s * 2.0)
+		f["kindle"] = clampf(k, 0.0, 1.0)
+		if k >= 1.0:
+			_fire_lit(i)
+			lit_any = true
+	var now := boss_dark or (not fires.is_empty() and not lit_any)
+	if now != dark:
+		dark = now
+		emit(["dark", dark])
+		var gone := not fires.is_empty() and fires.all(func(f: Dictionary) -> bool: return f["gone"])
+		if dark and not boss_dark and not gone:
+			emit(["banner", "Darkness", "Every road fire is out. Hold a fire's ring to light it again.", Color("8a7dff")])
+			emit(["snd", "dark_near", 1.0])
+		elif not dark:
+			emit(["say", "The light is back.", Color("ffd27a")])
+
+
+func _fire_lit(i: int) -> void:
+	var f: Dictionary = fires[i]
+	f["lit"] = true
+	f["kindle"] = 0.0
+	f["hp"] = f["max"]
+	emit(["fire", i, true, f["lane"], false])
+	emit(["snd", "ignite", 1.0])
+
+
+## The campfire between chapters lights every fire the dark hasn't taken.
+func relight_fires() -> void:
+	for i in fires.size():
+		var f: Dictionary = fires[i]
+		if f["gone"]:
+			continue
+		f["hp"] = f["max"]
+		if not f["lit"]:
+			_fire_lit(i)
+
+
+## The dark of the next-to-last chapter: every fire out, and none will light.
+func snuff_fires() -> void:
+	for i in fires.size():
+		var f: Dictionary = fires[i]
+		if f["gone"]:
+			continue
+		f["gone"] = true
+		if f["lit"]:
+			_fire_out(i)
+		else:
+			emit(["fire", i, false, f["lane"], true])
+		emit(["boom", "dark", (f["pos"] as Vector2).x, (f["pos"] as Vector2).y, FIRE_ZONE])
+	emit(["banner", "The dark comes", "It swallows the road fires. They will not light again.", Color("8a7dff")])
+	emit(["snd", "dark_take", 1.0])
+
+
+# --- The Town --------------------------------------------------------------------
+
+## A hero pays for building `id`'s next level, standing at its door.
+func build(h: HeroState, id: String) -> void:
+	if not id in TownDefs.ids() or not h.alive:
+		return
+	if h.pos.distance_to(TownDefs.door(id)) > TownDefs.BUILD_R + 80.0:
+		return
+	var price := TownDefs.cost(town, id)
+	if price < 0:
+		return
+	if h.gold < price:
+		emit(["denied", h.slot])
+		return
+	h.gold -= price
+	var lv := TownDefs.level(town, id) + 1
+	town[id] = lv
+	for hh: HeroState in heroes.values():
+		hh.recompute()
+	match str(TownDefs.get_def(id)["key"]):
+		"hearth":
+			var before := hearth_max
+			hearth_max = hearth_base * (1.0 + TownDefs.bonus(town, "hearth"))
+			hearth_hp = minf(hearth_max, hearth_hp + hearth_max - before)
+		"fire_hp":
+			rescale_fires()
+	emit(["build", h.slot, id, lv, price])
+	emit(["snd", "levelup", 0.9])
+	emit(["snd", "coin", 0.7])
+
+
 # --- Zones -----------------------------------------------------------------
 
 ## A lasting area: fire pool, smoke, web, poison, rain of arrows, lava.
@@ -1159,5 +1390,9 @@ func pack_state() -> Dictionary:
 		if m.alive() and m.rank == "boss":
 			boss = {"id": m.id, "kind": m.kind, "hp": m.hp_frac(), "phase": m.brain.get("phase", 1),
 				"enrage": m.brain.get("enrage_t", 0.0), "enraged": m.enraged}
+	var fs: Array = []
+	for f: Dictionary in fires:
+		fs.append([f["pos"], 2 if f["gone"] else (1 if f["lit"] else 0), float(f["hp"]) / maxf(1.0, float(f["max"])),
+			f["kindle"], f["lane"]])
 	return {"heroes": hs, "hearth": hearth_hp, "hearth_max": hearth_max, "dir": director.view(), "boss": boss,
-		"alive": living_count(), "over": over, "t": time}
+		"alive": living_count(), "over": over, "t": time, "fires": fs, "town": town.duplicate(), "dark": dark}

@@ -1,7 +1,9 @@
 class_name MapData
 extends RefCounted
-## The one map: the Town's plaza with the Hearth in the middle, and three
-## corridors climbing to it from the worlds below, west, north and east.
+## The one map: the Town's plaza with the Hearth in the middle and MatchRPG's
+## nine buildings round its rim (TownDefs), and three corridors climbing to
+## it from the worlds below, west, north and east. Each corridor has two
+## road fires (fire_spots).
 ## Each corridor is a winding passage with a chamber halfway (room to kite)
 ## and a narrow gate where it meets the plaza (a place to hold). A corridor
 ## only sends mobs while a player holds it: slot 0 is west, 1 north, 2 east.
@@ -64,9 +66,19 @@ func _init() -> void:
 
 ## Whether a point is open ground, from the shapes (used to build the grid).
 static func _open(p: Vector2) -> bool:
+	# The Town's buildings stand on the plaza's rim, solid back to the wall,
+	# and the southern row has the town wall behind it.
+	var from_hearth := p.distance_to(HEARTH)
+	if from_hearth < PLAZA_R + 80.0:
+		var ang := fposmod(rad_to_deg((p - HEARTH).angle()), 360.0)
+		if from_hearth > TownDefs.WALL_IN and ang >= TownDefs.WALL_FROM and ang <= TownDefs.WALL_TO:
+			return false
+		for id: String in TownDefs.ids():
+			var f := TownDefs.foot(id) + Vector2(0, -30)
+			if _seg_dist(p, f, f - TownDefs.facing(id) * 130.0) < TownDefs.SOLID_R:
+				return false
 	if p.distance_to(HEARTH) < PLAZA_R:
 		return true
-	# The Town's lane south of the plaza, a short dead end with the houses.
 	for c: Dictionary in CORRIDORS:
 		var pts: Array = c["points"]
 		if p.distance_to(pts[CHAMBER_AT]) < CHAMBER_R:
@@ -257,6 +269,13 @@ func _build_clearance() -> void:
 			if clearance[ni] > clearance[cur] + 1.0:
 				clearance[ni] = clearance[cur] + 1.0
 				q.append(ni)
+
+
+## The road fires of corridor `slot`: one in its chamber, one where its
+## gate begins. See Sim's road fires.
+static func fire_spots(slot: int) -> Array:
+	var pts: Array = CORRIDORS[slot]["points"]
+	return [pts[CHAMBER_AT], pts[pts.size() - 2]]
 
 
 static func portal(slot: int) -> Vector2:

@@ -2,7 +2,7 @@ class_name MapView
 extends Node2D
 ## Draws the map in the chapter's world: MatchRPG's backdrop colors for the
 ## rock, the floor and its plants or bricks, the portals the mobs climb out
-## of, the Town's houses south of the plaza and the Hearth. Drawn once per
+## of, the paths of the Town round the plaza and the Hearth's stones. Drawn once per
 ## chapter; the Hearth's fire and the portals' glow are drawn live by View.
 
 var map: MapData
@@ -130,23 +130,32 @@ func _near_floor(p: Vector2, r: float) -> bool:
 	return false
 
 
-## The Town south of the plaza: the buildings MatchRPG's town has, as
-## roofs seen from above, and a path to the Hearth.
+## The Town round the Hearth: a worn path from the Hearth to each building's
+## door. The buildings themselves are drawn live by View (they grow as they
+## level), and so is the Hearth's fire.
 func _draw_town() -> void:
-	var names := ["Barracks", "Forge", "Mage Tower", "Alchemist", "Mint", "Armory"]
-	var colors := [Color("8a5a3a"), Color("6e6a64"), Color("5b4a8a"), Color("3f7a6a"), Color("9a7a3a"), Color("4a5a7a")]
-	var font := ThemeDB.fallback_font
-	for i in names.size():
-		var a := PI * 0.5 + (i - 2.5) * 0.36
-		var p := MapData.HEARTH + Vector2.from_angle(a) * (MapData.PLAZA_R + 150.0)
-		var s := Vector2(130, 90)
-		draw_rect(Rect2(p - s * 0.5 + Vector2(6, 8), s), Color(0, 0, 0, 0.35))
-		draw_rect(Rect2(p - s * 0.5, s), colors[i])
-		draw_colored_polygon(PackedVector2Array([p - s * 0.5, p + Vector2(s.x * 0.5, -s.y * 0.5), p + Vector2(0, -s.y * 0.1)]),
-			colors[i].lightened(0.12))
-		draw_rect(Rect2(p + Vector2(-12, s.y * 0.5 - 26), Vector2(24, 26)), Color("2a2018"))
-		draw_string(font, p + Vector2(-s.x * 0.5, s.y * 0.5 + 22), names[i], HORIZONTAL_ALIGNMENT_CENTER, s.x, 16,
-			Color(1, 1, 1, 0.55))
+	var ch := ChapterDefs.get_def(chapter)
+	var path_c: Color = ch["path"]
+	# The town wall behind the southern row: a band of stone with a lit top.
+	var band := PackedVector2Array()
+	var steps := 40
+	for i in steps + 1:
+		var a := deg_to_rad(lerpf(TownDefs.WALL_FROM, TownDefs.WALL_TO, float(i) / steps))
+		band.append(MapData.HEARTH + Vector2.from_angle(a) * TownDefs.WALL_IN)
+	for i in range(steps, -1, -1):
+		var a := deg_to_rad(lerpf(TownDefs.WALL_FROM, TownDefs.WALL_TO, float(i) / steps))
+		band.append(MapData.HEARTH + Vector2.from_angle(a) * (MapData.PLAZA_R + 30.0))
+	draw_colored_polygon(band, Color("4a4540"))
+	draw_polyline(band.slice(0, steps + 1), Color("6e6a64"), 10.0)
+	for i in range(0, steps + 1, 2):
+		var a := deg_to_rad(lerpf(TownDefs.WALL_FROM, TownDefs.WALL_TO, float(i) / steps))
+		var at := MapData.HEARTH + Vector2.from_angle(a) * (TownDefs.WALL_IN + 22.0)
+		draw_rect(Rect2(at - Vector2(14, 8), Vector2(28, 16)), Color("5c5650"))
+	for id: String in TownDefs.ids():
+		var door := TownDefs.door(id)
+		draw_line(MapData.HEARTH, door, path_c, 56.0)
+		draw_circle(door, 46.0, path_c)
+		draw_circle(door, 30.0, path_c.lightened(0.06))
 	# The Hearth's ring of stones.
 	for k in 16:
 		var p := MapData.HEARTH + Vector2.from_angle(k * TAU / 16.0) * 110.0

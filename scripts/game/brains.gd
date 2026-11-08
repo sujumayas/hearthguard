@@ -457,7 +457,7 @@ static func _do_boss_move(sim: Sim, m: Mob, h: HeroState, move: String) -> void:
 				sim.emit(["snd", "boulder_break", 1.0])
 				if int(b["phase"]) >= 3 and not b.get("dark", false):
 					b["dark"] = true
-					sim.emit(["dark", true])
+					sim.boss_dark = true
 		"breath":
 			line(sim, m.pos, ang, 620.0, 120.0, 1.0, atk * 2.0)
 			sim.emit(["snd", "roar_wyrm", 0.7])
