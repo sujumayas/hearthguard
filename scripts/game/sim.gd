@@ -49,6 +49,12 @@ var freeze_all_t := 0.0
 var players := 1
 var over := ""
 var next_zone := 1
+## Who an area of damage belongs to, for the play logs: a mob's kind, and its
+## move while Brains runs one ("lich:curse"). after() and zones carry it to
+## the damage they deal later.
+var blame := ""
+## How long a hero remembers the hits it took, for its death record.
+const RECENT_S := 6.0
 ## Kills in the last moment, per hero, for the multikill banners.
 var multikill := {}
 
@@ -114,7 +120,7 @@ func take_events() -> Array:
 
 ## Runs `fn` after `delay` seconds of sim time.
 func after(delay: float, fn: Callable) -> void:
-	later.append([time + delay, fn])
+	later.append([time + delay, fn, blame])
 
 
 func _step_later() -> void:
@@ -127,7 +133,9 @@ func _step_later() -> void:
 			keep.append(l)
 	later = keep
 	for l: Array in due:
+		blame = l[2]
 		(l[1] as Callable).call()
+	blame = ""
 
 
 # --- Spawning -------------------------------------------------------------
@@ -222,11 +230,15 @@ func _step_heroes() -> void:
 		if h.poison_t > 0.0:
 			h.poison_t -= DT
 			regen -= h.poison_dps
+			_note_dot(h, "poison:" + h.poison_src, h.poison_dps * DT)
 		if h.burn_t > 0.0:
 			h.burn_t -= DT
 			regen -= h.burn_dps
+			_note_dot(h, "burn:" + h.burn_src, h.burn_dps * DT)
 		h.hp = minf(h.max_hp(), h.hp + regen * DT)
 		if h.hp <= 0.0:
+			var dot := "poison" if h.poison_t > 0.0 else "burn"
+			h.last_blow = {"how": dot, "src": dot + ":" + (h.poison_src if dot == "poison" else h.burn_src), "dmg": 0.0}
 			_kill_hero(h)
 			continue
 		var ward_max := h.fx("ward") * h.max_hp()
@@ -273,7 +285,9 @@ func give_xp(amount: float, whole := false) -> void:
 			emit(["lvl", h.slot, h.level])
 
 
-func damage_hero(h: HeroState, amount: float, src: Mob = null, kind := "hit") -> void:
+## `by` names the mob behind a hit that has no `src` (a missile), for the
+## play logs only: unlike `src` it can't be hit back by thorns.
+func damage_hero(h: HeroState, amount: float, src: Mob = null, kind := "hit", by: Mob = null) -> void:
 	if not h.targetable() or h.aegis_t > 0.0:
 		return
 	if kind == "hit" and rng.randf() < float(h.stats["dodge"]):
@@ -294,6 +308,7 @@ func damage_hero(h: HeroState, amount: float, src: Mob = null, kind := "hit") ->
 		dmg -= soak
 	h.hp -= dmg
 	h.hurt_t = 0.2
+	_note_hit(h, dmg, kind, src if src != null else by)
 	emit(["hhit", h.slot, roundi(dmg)])
 	if h.hp < h.max_hp() * 0.3 and h.fx("second_wind") > 0.0 and h.second_wind_cd <= 0.0:
 		h.second_wind_cd = 40.0
@@ -303,6 +318,28 @@ func damage_hero(h: HeroState, amount: float, src: Mob = null, kind := "hit") ->
 		emit(["snd", "heal", 0.9])
 	if h.hp <= 0.0:
 		_kill_hero(h)
+
+
+## Keeps where a hero's damage came from, for Telemetry.
+func _note_hit(h: HeroState, dmg: float, kind: String, who: Mob) -> void:
+	if dmg <= 0.0:
+		return
+	var label := ""
+	if who != null:
+		label = who.kind
+	elif kind == "zone":
+		label = "zone:" + (blame if blame != "" else "unknown")
+	else:
+		label = kind + ":unknown"
+	h.damage_taken += dmg
+	h.taken_by[label] = float(h.taken_by.get(label, 0.0)) + dmg
+	h.recent.append([time, dmg, label])
+	while not h.recent.is_empty() and time - float(h.recent[0][0]) > RECENT_S:
+		h.recent.pop_front()
+	h.last_blow = {"how": "zone" if kind == "zone" else "hit", "src": label, "dmg": dmg}
+	if who != null:
+		h.last_blow["mob"] = {"id": who.id, "kind": who.kind, "rank": who.rank, "lane": who.lane,
+			"hp_frac": who.hp_frac(), "dist": who.pos.distance_to(h.pos), "enraged": who.enraged}
 
 
 func heal_hero(h: HeroState, amount: float) -> void:
@@ -320,6 +357,11 @@ func _kill_hero(h: HeroState) -> void:
 	_release_tokens_for(h.slot)
 	emit(["hdie", h.slot, h.pos.x, h.pos.y])
 	emit(["snd", "hero_death", 1.0])
+
+
+func _note_dot(h: HeroState, label: String, dmg: float) -> void:
+	h.damage_taken += dmg
+	h.taken_by[label] = float(h.taken_by.get(label, 0.0)) + dmg
 
 
 func add_flow(h: HeroState, n: int) -> void:
@@ -672,7 +714,10 @@ func _step_mob(m: Mob) -> void:
 	if freeze_all_t > 0.0 and m.rank != "boss":
 		return
 	if m.rank != "mob":
-		if Brains.step(self, m):
+		blame = m.kind
+		var busy := Brains.step(self, m)
+		blame = ""
+		if busy:
 			return
 	match m.state:
 		Mob.State.MARCH:
@@ -932,7 +977,7 @@ func _land_attack(m: Mob, h: HeroState) -> void:
 		after(flight, func() -> void:
 			for hh: HeroState in heroes.values():
 				if hh.targetable() and hh.pos.distance_to(at) < 58.0:
-					damage_hero(hh, dmg, null)
+					damage_hero(hh, dmg, null, "hit", m)
 					_trait_hit(tr, hh, m)
 					break)
 		return
@@ -960,9 +1005,11 @@ func _trait_hit(tr: String, h: HeroState, m: Mob) -> void:
 		"poison":
 			h.poison_t = 4.0
 			h.poison_dps = minf(h.poison_dps + m.atk * 0.25, m.atk * 1.0)
+			h.poison_src = m.kind
 		"burn":
 			h.burn_t = 2.0
 			h.burn_dps = m.atk * 0.4
+			h.burn_src = m.kind
 
 
 func _at_hearth(m: Mob) -> void:
@@ -1028,7 +1075,8 @@ func living_count() -> int:
 ## A lasting area: fire pool, smoke, web, poison, rain of arrows, lava.
 ## `on_tick(zone)` runs every 0.25 s while it lasts.
 func add_zone(kind: String, at: Vector2, r: float, dur: float, data := {}) -> Dictionary:
-	var z := {"id": next_zone, "kind": kind, "pos": at, "r": r, "t": dur, "data": data, "acc": 0.0}
+	var z := {"id": next_zone, "kind": kind, "pos": at, "r": r, "t": dur, "data": data, "acc": 0.0,
+		"by": (blame + ":" if blame != "" else "") + kind}
 	next_zone += 1
 	zones.append(z)
 	emit(["zone", z["id"], kind, at.x, at.y, r, dur])
@@ -1042,7 +1090,9 @@ func _step_zones() -> void:
 		z["acc"] = float(z["acc"]) + DT
 		if float(z["acc"]) >= 0.25:
 			z["acc"] = 0.0
+			blame = z["by"]
 			Skills.zone_tick(self, z)
+			blame = ""
 		if float(z["t"]) > 0.0:
 			keep.append(z)
 		else:

@@ -55,7 +55,7 @@ func _ready() -> void:
 	pass_edit.text_submitted.connect(func(_s: String) -> void: Auth.sign_in(email_edit.text, pass_edit.text))
 	email_edit.text_submitted.connect(func(_s: String) -> void: pass_edit.grab_focus())
 	Auth.changed.connect(func() -> void:
-		if Auth.signed_in() and auth_open:
+		if Auth.has_account() and auth_open:
 			auth_open = false
 			pass_edit.text = "")
 	Sfx.music("music_menu")
@@ -225,10 +225,12 @@ func _draw_account() -> void:
 	if not Auth.enabled():
 		return
 	if not auth_open:
-		if Auth.signed_in():
+		if Auth.has_account():
 			draw_string(body, Vector2(18, 34), Auth.email, HORIZONTAL_ALIGNMENT_LEFT, 260, 15, DIM)
 			_btn(Rect2(16, 44, 120, 36), "Sign out", func() -> void: Auth.sign_out())
 		else:
+			if Auth.guest:
+				draw_string(body, Vector2(146, 41), "Playing as a guest", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, DIM)
 			_btn(Rect2(16, 16, 120, 40), "Sign in", func() -> void:
 				auth_open = true
 				Auth.message = ""

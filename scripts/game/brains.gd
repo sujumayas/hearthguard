@@ -70,6 +70,7 @@ static func step(sim: Sim, m: Mob) -> bool:
 static func _elite(sim: Sim, m: Mob) -> bool:
 	var b := m.brain
 	var move: String = m.def.get("move", "")
+	sim.blame = m.kind + ":" + move
 	if move == "two_songs":
 		b["song_t"] = float(b["song_t"]) - Sim.DT
 		if float(b["song_t"]) <= 0.0:
@@ -383,6 +384,7 @@ static func _mossback_regen(sim: Sim, m: Mob) -> void:
 
 
 static func _do_boss_move(sim: Sim, m: Mob, h: HeroState, move: String) -> void:
+	sim.blame = m.kind + ":" + move
 	var atk := m.atk * (1.25 if m.enraged else 1.0)
 	var b := m.brain
 	var to := h.pos - m.pos

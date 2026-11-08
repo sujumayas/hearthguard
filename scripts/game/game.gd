@@ -30,6 +30,8 @@ var cam_locked := false
 var cam_pos := Vector2.ZERO
 var zoom := 1.0
 var over_shown := false
+## The play logs: Telemetry reads the Sim on the host, PlayLog stores.
+var telemetry: Telemetry
 
 
 func _ready() -> void:
@@ -76,8 +78,12 @@ func _ready() -> void:
 		view.heroes[s] = {"slot": s, "cls": slots[s]["cls"], "name": slots[s]["name"], "pos": MapData.hero_start(s),
 			"flip": false, "alive": true, "hp": 1.0, "max_hp": 1.0}
 	Net.closed.connect(_on_host_gone)
+	PlayLog.begin({"mode": ("host" if is_host else "join") if Net.online else "solo", "seed": Net.seed_value,
+		"party": slots.size(), "cls": info["cls"], "name": info["name"]})
+	PlayLog.summary_fn = log_summary
 	if is_host:
 		sim = Sim.new(Net.seed_value, slots, map)
+		telemetry = Telemetry.new(sim)
 		loaded[1] = true
 		_try_start()
 	else:
@@ -123,7 +129,28 @@ func peer_left(peer: int) -> void:
 	_try_start()
 
 
+func _exit_tree() -> void:
+	# Leave, Back to the Town, or the window closing. A play that ended
+	# already keeps its outcome.
+	PlayLog.finish("quit")
+
+
+## What the play's row in `plays` holds, from what this screen knows.
+func log_summary() -> Dictionary:
+	var me: Dictionary = state.get("heroes", {}).get(my_slot, {})
+	var d: Dictionary = state.get("dir", {})
+	var out := {"chapter": int(d.get("chapter", 0)), "wave": int(d.get("wave", 0)),
+		"duration_s": snappedf(float(state.get("t", 0.0)), 0.1), "hearth_frac": snappedf(hearth_frac(), 0.001)}
+	if not me.is_empty():
+		out.merge({"level": int(me.get("level", 1)), "kills": int(me.get("kills", 0)), "deaths": int(me.get("deaths", 0)),
+			"damage_done": roundf(float(me.get("dmg", 0.0))), "damage_taken": roundf(float(me.get("taken", 0.0))),
+			"gold": int(me.get("gold", 0)),
+			"final": {"ranks": me.get("ranks", []), "talents": me.get("talents", []), "belt": me.get("belt", [])}}, true)
+	return out
+
+
 func _on_host_gone() -> void:
+	PlayLog.finish("disconnected")
 	hud.show_end("The host left", "The connection to the host was lost.")
 
 
@@ -243,6 +270,7 @@ func _physics_process(_delta: float) -> void:
 			remote[my_slot] = ctrl.look()
 		sim.step()
 		var ev := sim.take_events()
+		ev.append_array(telemetry.observe(ev))
 		if not ev.is_empty():
 			_handle(ev)
 			if Net.online:
@@ -289,6 +317,8 @@ func _apply_state(st: Dictionary) -> void:
 		over_shown = true
 		var won: bool = st["over"] == "victory"
 		get_tree().create_timer(3.0).timeout.connect(func() -> void:
+			# Late, so this game's last records have come in first.
+			PlayLog.finish("victory" if won else "defeat")
 			hud.show_end("Victory" if won else "Defeat",
 				"The Town stands. Astaroth is gone." if won else "The Hearth went out."))
 
@@ -297,6 +327,9 @@ func _handle(ev: Array) -> void:
 	view.handle(ev)
 	for e: Array in ev:
 		match e[0]:
+			"log":
+				if e[1] == my_slot or (e[1] == -1 and is_host):
+					PlayLog.add(e)
 			"banner":
 				hud.banner(e[1], e[2], e[3])
 			"chapter":

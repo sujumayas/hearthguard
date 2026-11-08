@@ -95,6 +95,21 @@ The project URL and publishable key are in `project.godot` under `[supabase]`. T
 
 If "Confirm email" is on in the Supabase dashboard (Authentication > Sign In / Providers > Email), a new account gets a link by email and can only sign in after clicking it.
 
+A player who hasn't signed in plays as a guest, a Supabase anonymous user, so their plays are logged too. This needs "Allow anonymous sign-ins" on in the dashboard. When a guest signs in or makes an account, their plays move to it. Before signing in, the guest asks the database for a claim code (`issue_guest_claim`). After signing in, the account sends it back (`redeem_guest_claim`), and the database moves every play and event the guest made.
+
+### Play logs
+
+Every play is stored in Supabase, for balance and debugging. The tables, security rules and guest claim functions are in `supabase/migrations/`.
+
+- `plays` has one row per play and player. It has the mode, party size, hero, platform and build (`application/config/version`), how far the play got, the totals, and the outcome (`victory`, `defeat`, `quit` or `disconnected`). The row is updated every 20 seconds, so a play whose tab was closed still shows how far it got, with `ended_at` empty. `match_seed` is the same for everyone in a co-op match.
+- `play_events` has what happened, as JSON in `data`. A `death` has the blow and the mob that dealt it (kind, rank, lane, its HP), every hit of the last 6 seconds by source, the hero's whole state (stats, ranks, talents, belt, cooldowns, buffs and debuffs), the potions left, the mobs, elites and boss near, and the nearest ally. A `hero_wave` sums up each wave per hero: damage done, damage taken by source, kills, deaths, time dead, casts per skill and potions drunk. There are also `wave_start`, `wave_end`, `level`, `learn`, `talent`, `loot`, `buy`, `drink`, `respawn` and `game_over`.
+
+`scripts/game/telemetry.gd` makes the records on the host from the Sim. They go to the players along with the game's other events, and each player's `PlayLog` (`scripts/autoload/play_log.gd`) stores the records about their own hero. Only the host stores the match records (slot -1). Damage sources are names like `skeleton`, `zone:lich:curse` (a boss or elite move, kept through `Sim.blame`) or `poison:giant_spider`. Logging changes nothing in the game: a seeded `sim_bot` run plays the same with and without it.
+
+Records go in batches. What can't be sent is kept in `user://play_log_queue.json` and sent on the next start. A 15 minute game makes about 200 records and 50 KB.
+
+A player can send made-up numbers, since the game writes its own logs. That's fine for balance work, but don't build a leaderboard on these tables.
+
 ## What comes from where
 
 ### The rts-playtest-lab preset

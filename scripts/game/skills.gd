@@ -597,6 +597,8 @@ static func drink(sim: Sim, h: HeroState, i: int, tp: Vector2) -> void:
 	if id == "" or int(b[1]) <= 0:
 		return
 	var def := PotionDefs.get_def(id)
+	# Before the potion works, so the log shows what it was drunk at.
+	sim.emit(["drink", h.slot, id, h.hp / h.max_hp(), sim.count_near(h.pos, 300.0)])
 	match id:
 		"heal":
 			sim.heal_hero(h, h.max_hp() * 0.5)
@@ -666,6 +668,7 @@ static func buy(sim: Sim, h: HeroState, id: String) -> void:
 	if give_potion(sim, h, id):
 		h.gold -= price
 		sim.emit(["snd", "coin", 0.8])
+		sim.emit(["buy", h.slot, id, price])
 
 
 static func learn(sim: Sim, h: HeroState, slot: int) -> void:

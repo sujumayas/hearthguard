@@ -4,6 +4,7 @@ config_version=5
 [application]
 
 config/name="Hearthguard"
+config/version="0.2.0"
 config/description="A Kingsfoil Studios hero defense set in the MatchRPG world."
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
@@ -22,6 +23,7 @@ Sfx="*res://scripts/autoload/sfx.gd"
 Net="*res://scripts/autoload/net.gd"
 Touch="*res://scripts/autoload/touch.gd"
 Auth="*res://scripts/autoload/auth.gd"
+PlayLog="*res://scripts/autoload/play_log.gd"
 
 [display]
 

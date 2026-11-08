@@ -69,6 +69,16 @@ var kills := 0
 var damage_done := 0.0
 var deaths := 0
 
+# For the play logs (Telemetry): what hurt it, by source ("skeleton",
+# "zone:lich:curse", "poison:spider"), its last hits, and the one that
+# landed last. Sim._note_hit keeps them.
+var damage_taken := 0.0
+var taken_by := {}
+var recent: Array = []
+var last_blow := {}
+var poison_src := ""
+var burn_src := ""
+
 
 func recompute() -> void:
 	var was_max := float(stats.get("max_hp", 0.0))
@@ -98,4 +108,4 @@ func to_dict() -> Dictionary:
 		"belt": belt.duplicate(true), "flow": flow, "ward": ward, "stun": stun_t, "root": root_t,
 		"slow": slow if slow_t > 0.0 else 0.0, "bloodlust": bloodlust_t, "headsman": headsman_t,
 		"untouchable": untouchable_t, "aegis": aegis_t, "surge": surge_t, "split": split_shots,
-		"kills": kills, "rampage": rampage, "bloodlust_amt": bloodlust, "tumble": tumble_charges, "pos": pos, "flip": flip, "deaths": deaths, "dmg": damage_done}
+		"kills": kills, "rampage": rampage, "bloodlust_amt": bloodlust, "tumble": tumble_charges, "pos": pos, "flip": flip, "deaths": deaths, "dmg": damage_done, "taken": damage_taken}
