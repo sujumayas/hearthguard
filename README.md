@@ -108,7 +108,9 @@ Every play is stored in Supabase, for balance and debugging. The tables, securit
 
 Records go in batches. What can't be sent is kept in `user://play_log_queue.json` and sent on the next start. A 15 minute game makes about 200 records and 50 KB.
 
-A player can send made-up numbers, since the game writes its own logs. That's fine for balance work, but don't build a leaderboard on these tables.
+Players can only write what the game writes. The column grants allow inserting a play's details and updating its summary, nothing else, and there is no delete. Checks cap the values (level, chapter, sizes), a play at 10,000 events, and a player at 30 new plays an hour. `started_at` comes from the game, so a play logged offline keeps its real start; `received_at` is the server's time.
+
+A player can still send made-up numbers that pass the checks, since the game writes its own logs. That's fine for balance work. Before a leaderboard, see the replay verification plan in `docs/todo.md`.
 
 ## What comes from where
 

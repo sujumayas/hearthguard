@@ -15,6 +15,8 @@ const BATCH := 200
 ## At most this many unsent events are kept; the oldest go first. About 25
 ## full games.
 const MAX_QUEUED := 5000
+## The database takes at most this many events per play (play_events_ranges).
+const MAX_PER_PLAY := 10000
 const QUEUE := "user://play_log_queue.json"
 const ENDPOINT_PLAYS := "/rest/v1/plays"
 const ENDPOINT_EVENTS := "/rest/v1/play_events"
@@ -56,6 +58,7 @@ func begin(info: Dictionary) -> void:
 	_finished = false
 	_creates.append({
 		"id": play_id,
+		"started_at": _now(),
 		"mode": info.get("mode", "solo"),
 		"match_seed": int(info.get("seed", 0)),
 		"party_size": int(info.get("party", 1)),
@@ -69,7 +72,7 @@ func begin(info: Dictionary) -> void:
 
 ## A record from Telemetry: ["log", slot, kind, t, chapter, wave, data].
 func add(e: Array) -> void:
-	if play_id == "" or _finished:
+	if play_id == "" or _finished or _seq >= MAX_PER_PLAY:
 		return
 	_events.append({"play_id": play_id, "seq": _seq, "slot": e[1], "kind": e[2], "t": e[3],
 		"chapter": e[4], "wave": e[5], "data": e[6]})
@@ -86,7 +89,7 @@ func finish(outcome: String) -> void:
 	_update_summary()
 	var p: Dictionary = _patches.get(play_id, {})
 	p["outcome"] = outcome
-	p["ended_at"] = Time.get_datetime_string_from_system(true) + "Z"
+	p["ended_at"] = _now()
 	_patches[play_id] = p
 	_finished = true
 	summary_fn = Callable()
@@ -196,6 +199,10 @@ static func _whole(v: Variant) -> Variant:
 			out[k] = _whole(v[k])
 		return out
 	return v
+
+
+static func _now() -> String:
+	return Time.get_datetime_string_from_system(true) + "Z"
 
 
 static func _uuid() -> String:
