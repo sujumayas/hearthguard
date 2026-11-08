@@ -29,6 +29,8 @@ Every push to `main` deploys it. The GitHub Actions workflow in `.github/workflo
 
 To deploy by hand, export the web build, copy `deploy/netlify.toml` into `build/web`, and run `netlify deploy --dir=build/web --prod --site kingsfoil-hearthguard`.
 
+The playtest dashboard at https://kingsfoil-hearthguard-dashboard.netlify.app lists every logged play by player. See `dashboards/README.md`.
+
 The same build plays on phones and computers; see "Touch" below. https://kingsfoil-hearthguard-mobile.netlify.app holds the first touch build and is not updated. The Netlify badge is turned off in both projects because it covered the Attack button.
 
 ## Play together

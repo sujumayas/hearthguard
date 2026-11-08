@@ -1,0 +1,9 @@
+# Static playtest dashboard. No build step: Netlify serves this folder as is.
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+    X-Robots-Tag = "noindex"
