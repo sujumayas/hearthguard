@@ -21,6 +21,7 @@ Tuning="*res://scripts/autoload/tuning.gd"
 Sfx="*res://scripts/autoload/sfx.gd"
 Net="*res://scripts/autoload/net.gd"
 Touch="*res://scripts/autoload/touch.gd"
+Auth="*res://scripts/autoload/auth.gd"
 
 [display]
 
@@ -30,6 +31,11 @@ window/size/window_width_override=1600
 window/size/window_height_override=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[supabase]
+
+url="https://rtmxrfiykgxqgyxnnrnx.supabase.co"
+publishable_key="sb_publishable_vKdCg9wL5Cw8xC5aN5qo_w_oHDztQzl"
 
 [physics]
 

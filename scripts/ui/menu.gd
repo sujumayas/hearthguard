@@ -18,6 +18,10 @@ var t := 0.0
 var hits: Array = []
 var mouse := Vector2.ZERO
 var picked := "fighter"
+## The sign in panel over the menu, for an account through Auth.
+var auth_open := false
+var email_edit: LineEdit
+var pass_edit: LineEdit
 
 
 func _ready() -> void:
@@ -46,8 +50,29 @@ func _ready() -> void:
 	Net.closed.connect(func() -> void:
 		status = "The host closed the game."
 		in_lobby = false)
+	email_edit = _field("Email", false)
+	pass_edit = _field("Password", true)
+	pass_edit.text_submitted.connect(func(_s: String) -> void: Auth.sign_in(email_edit.text, pass_edit.text))
+	email_edit.text_submitted.connect(func(_s: String) -> void: pass_edit.grab_focus())
+	Auth.changed.connect(func() -> void:
+		if Auth.signed_in() and auth_open:
+			auth_open = false
+			pass_edit.text = "")
 	Sfx.music("music_menu")
 	gui_input.connect(_on_input)
+
+
+func _field(hint: String, secret: bool) -> LineEdit:
+	var e := LineEdit.new()
+	e.placeholder_text = hint
+	e.secret = secret
+	e.max_length = 120
+	e.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD if secret else LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
+	e.add_theme_font_override("font", body)
+	e.add_theme_font_size_override("font_size", 18)
+	e.visible = false
+	add_child(e)
+	return e
 
 
 ## The web build is solo for now: a browser can't host, and joining a desktop
@@ -63,8 +88,16 @@ func _process(delta: float) -> void:
 	name_edit.size = Vector2(300, 38)
 	addr_edit.position = Vector2(cx + 30, size.y - 108)
 	addr_edit.size = Vector2(260, 40)
-	addr_edit.visible = not in_lobby
+	addr_edit.visible = not in_lobby and not auth_open
 	addr_edit.editable = not SOLO_ONLY
+	name_edit.visible = not auth_open
+	var p := _auth_rect()
+	for i in 2:
+		var e: LineEdit = [email_edit, pass_edit][i]
+		e.visible = auth_open
+		e.position = p.position + Vector2(30, 76 + i * 56)
+		e.size = Vector2(p.size.x - 60, 42)
+		e.editable = not Auth.busy
 	queue_redraw()
 
 
@@ -86,11 +119,12 @@ func _btn(r: Rect2, text: String, fn: Callable, col := DUSK) -> void:
 
 
 ## A button that's there but can't be pressed yet.
-func _btn_off(r: Rect2, text: String) -> void:
+func _btn_off(r: Rect2, text: String, note := "Coming soon") -> void:
 	Kept.rect(self, r, DUSK.darkened(0.35))
 	Kept.rect(self, r, Color(EDGE, 0.4), false, 2.0)
-	_center(r.get_center().x, r.position.y + r.size.y * 0.5 + 1, text, 17, Color(BONE, 0.35), body)
-	_center(r.get_center().x, r.position.y + r.size.y - 5, "Coming soon", 11, Color("ffbf5e", 0.8), body)
+	_center(r.get_center().x, r.position.y + r.size.y * 0.5 + (1 if note != "" else 7), text, 17, Color(BONE, 0.35), body)
+	if note != "":
+		_center(r.get_center().x, r.position.y + r.size.y - 5, note, 11, Color("ffbf5e", 0.8), body)
 
 
 ## Taller buttons for a thumb: on a phone 44 units is only 24 CSS pixels.
@@ -179,6 +213,52 @@ func _draw() -> void:
 		draw_string(body, Vector2(cx - 290, size.y - 82), "Up to 3 players. Each one opens a corridor.", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, DIM)
 	if status != "":
 		_center(cx, size.y - 30, status, 16, Color("ffbf5e"), body)
+	_draw_account()
+
+
+func _auth_rect() -> Rect2:
+	return Rect2(size.x * 0.5 - 230, size.y * 0.5 - 170, 460, 330)
+
+
+## Top left, because the web page puts its full screen button top right.
+func _draw_account() -> void:
+	if not Auth.enabled():
+		return
+	if not auth_open:
+		if Auth.signed_in():
+			draw_string(body, Vector2(18, 34), Auth.email, HORIZONTAL_ALIGNMENT_LEFT, 260, 15, DIM)
+			_btn(Rect2(16, 44, 120, 36), "Sign out", func() -> void: Auth.sign_out())
+		else:
+			_btn(Rect2(16, 16, 120, 40), "Sign in", func() -> void:
+				auth_open = true
+				Auth.message = ""
+				email_edit.grab_focus())
+		return
+	# Dims the menu and swallows clicks that miss the panel.
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.6))
+	hits.append([Rect2(Vector2.ZERO, size), func() -> void: pass])
+	var p := _auth_rect()
+	Kept.rect(self, p, Color(0.08, 0.07, 0.11, 0.98))
+	Kept.rect(self, p, EDGE, false, 2.0)
+	_center(p.get_center().x, p.position.y + 50, "Your account", 30, Color("ffd27a"))
+	var by := p.position.y + 200
+	var bw := (p.size.x - 80) / 3.0
+	if Auth.busy:
+		_btn_off(Rect2(p.position.x + 30, by, bw, 44), "Sign in", "")
+		_btn_off(Rect2(p.position.x + 40 + bw, by, bw, 44), "Create", "")
+	else:
+		_btn(Rect2(p.position.x + 30, by, bw, 44), "Sign in", func() -> void:
+			Auth.sign_in(email_edit.text, pass_edit.text), Color("2f5a2a"))
+		_btn(Rect2(p.position.x + 40 + bw, by, bw, 44), "Create", func() -> void:
+			Auth.sign_up(email_edit.text, pass_edit.text))
+	_btn(Rect2(p.position.x + 50 + bw * 2, by, bw, 44), "Cancel", func() -> void:
+		auth_open = false
+		pass_edit.text = "")
+	if Auth.message != "":
+		var col := Color("ff8a7a") if Auth.message_is_error else Color("ffbf5e")
+		var lines := _wrap(Auth.message, p.size.x - 60, 15)
+		for k in mini(lines.size(), 3):
+			_center(p.get_center().x, by + 76 + k * 20, lines[k], 15, col, body)
 
 
 func _draw_lobby(cx: float) -> void:

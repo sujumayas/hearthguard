@@ -3,3 +3,4 @@ build/
 *.tmp
 tests/shots/
 .DS_Store
+.env

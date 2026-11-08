@@ -87,6 +87,14 @@ The choices are kept in `user://settings.cfg`, which is the browser's storage on
 
 The web page has its own shell (`web/shell.html`) with a full screen button in the top right corner. It tries the standard API, then the WebKit, Firefox and old Edge names. Browsers only allow full screen from a tap or a key, so on a phone or tablet the page asks on the first tap and keeps asking on later taps until the browser agrees, then locks landscape where the browser allows it (Android Chrome). After that it stops asking, so a player who leaves full screen stays out until they press the button. On a computer the page only goes full screen from the button. Safari on iPhone has no full screen API: there the button explains how to add the game to the home screen, and the page carries the meta tags that make that copy open with no browser bars. Held upright, a phone shows "Turn your phone sideways".
 
+### Accounts
+
+The Sign in button in the top left of the title screen opens a panel for an email and password account on Supabase. Playing doesn't need one. `scripts/autoload/auth.gd` calls the Supabase Auth REST endpoints (`/auth/v1/signup`, `/auth/v1/token`, `/auth/v1/logout`) with `HTTPRequest`, because Godot has no Supabase SDK. The session is kept in `user://session.cfg`, and the access token is refreshed two minutes before its hour runs out.
+
+The project URL and publishable key are in `project.godot` under `[supabase]`. The publishable key is safe to ship in the client. Never put the database password or the secret key there, because the web build hands every file to the browser. With the key empty, the Sign in button is hidden.
+
+If "Confirm email" is on in the Supabase dashboard (Authentication > Sign In / Providers > Email), a new account gets a link by email and can only sign in after clicking it.
+
 ## What comes from where
 
 ### The rts-playtest-lab preset
