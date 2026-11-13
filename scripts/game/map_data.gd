@@ -1,41 +1,52 @@
 class_name MapData
 extends RefCounted
-## The one map: the Town's plaza with the Hearth in the middle and MatchRPG's
-## nine buildings round its rim (TownDefs), and three corridors climbing to
-## it from the worlds below, west, north and east. Each corridor has two
-## road fires (fire_spots).
+## The one map: three corridors climbing from the worlds below, west, north
+## and east, meet at the Crossroads, and one road runs south from there into
+## the Town. The Town is open ground with MatchRPG's nine buildings laid out
+## along its roads like a village (TownDefs), the Mage Tower at the back.
+## Each corridor has two road fires (fire_spots).
 ## Each corridor is a winding passage with a chamber halfway (room to kite)
-## and a narrow gate where it meets the plaza (a place to hold). A corridor
-## only sends mobs while a player holds it: slot 0 is west, 1 north, 2 east.
+## and a narrow gate where it meets the Crossroads (a place to hold). A
+## corridor only sends mobs while a player holds it: slot 0 is west, 1
+## north, 2 east.
 ##
 ## The walkable ground is a grid of CELL pixels. Mobs read one flow field
-## toward the Hearth (the AI study: one field per destination, so 500 mobs
-## cost what one does); heroes path with AStarGrid2D and smooth it.
+## toward the nearest standing building (the AI study: one field per
+## destination, so 500 mobs cost what one does). It is built again when a
+## building falls. Heroes path with AStarGrid2D and smooth it.
 
 const SIZE := Vector2(4000, 3400)
 const CELL := 40.0
-const HEARTH := Vector2(2000, 2080)
-const PLAZA_R := 560.0
 const CORRIDOR_W := 250.0
 const GATE_W := 190.0
 const CHAMBER_R := 230.0
+## Where the three corridors meet, and the road from there into the Town.
+const CROSSROADS := Vector2(2000, 1380)
+const CROSSROADS_R := 210.0
+const TOWN_ROAD_W := 280.0
+## The Town's open ground, with rounded corners, and its square (where the
+## road from the Crossroads meets the middle street): the market, where
+## potions are sold.
+const TOWN := Rect2(1130, 1700, 1740, 1420)
+const TOWN_CORNER := 280.0
+const SQUARE := Vector2(2000, 2410)
 
-## Waypoints from the portal (first) to the plaza (last). The chamber is the
-## waypoint at CHAMBER_AT; the gate is the last segment.
+## Waypoints from the portal (first) to the Crossroads (last). The chamber is
+## the waypoint at CHAMBER_AT; the gate is the last segment.
 const CORRIDORS := [
 	{"name": "West Passage", "points": [Vector2(140, 1300), Vector2(640, 1300), Vector2(900, 880), Vector2(1260, 960),
-		Vector2(1300, 1720), Vector2(1540, 1930)]},
-	{"name": "North Passage", "points": [Vector2(2000, 140), Vector2(2000, 440), Vector2(1640, 700), Vector2(1720, 1060),
-		Vector2(2080, 1150), Vector2(2000, 1540)]},
+		Vector2(1420, 1260), Vector2(1800, 1380)]},
+	{"name": "North Passage", "points": [Vector2(2000, 140), Vector2(2000, 440), Vector2(1640, 700), Vector2(1700, 950),
+		Vector2(2000, 960), Vector2(2000, 1180)]},
 	{"name": "East Passage", "points": [Vector2(3860, 1300), Vector2(3360, 1300), Vector2(3100, 880), Vector2(2740, 960),
-		Vector2(2700, 1720), Vector2(2460, 1930)]},
+		Vector2(2580, 1260), Vector2(2200, 1380)]},
 ]
 const CHAMBER_AT := 2
 
 var w: int
 var h: int
 var walk := PackedByteArray()
-## Steps to the Hearth per cell (-1 where walls are), and each cell's flow.
+## Steps to the nearest standing building per cell (-1 where walls are), and each cell's flow.
 var dist := PackedFloat32Array()
 var flow := PackedVector2Array()
 ## Distance to the nearest wall per cell, in cells.
@@ -50,7 +61,7 @@ func _init() -> void:
 	for y in h:
 		for x in w:
 			walk[y * w + x] = 1 if _open(Vector2((x + 0.5) * CELL, (y + 0.5) * CELL)) else 0
-	_build_flow()
+	build_flow(TownDefs.ids())
 	_build_clearance()
 	astar.region = Rect2i(0, 0, w, h)
 	astar.cell_size = Vector2(CELL, CELL)
@@ -66,18 +77,15 @@ func _init() -> void:
 
 ## Whether a point is open ground, from the shapes (used to build the grid).
 static func _open(p: Vector2) -> bool:
-	# The Town's buildings stand on the plaza's rim, solid back to the wall,
-	# and the southern row has the town wall behind it.
-	var from_hearth := p.distance_to(HEARTH)
-	if from_hearth < PLAZA_R + 80.0:
-		var ang := fposmod(rad_to_deg((p - HEARTH).angle()), 360.0)
-		if from_hearth > TownDefs.WALL_IN and ang >= TownDefs.WALL_FROM and ang <= TownDefs.WALL_TO:
+	if TOWN.grow(40.0).has_point(p):
+		# The Town's buildings are solid, ruins and all.
+		if TownDefs.solid_at(p, 0.0) != "":
 			return false
-		for id: String in TownDefs.ids():
-			var f := TownDefs.foot(id) + Vector2(0, -30)
-			if _seg_dist(p, f, f - TownDefs.facing(id) * 130.0) < TownDefs.SOLID_R:
-				return false
-	if p.distance_to(HEARTH) < PLAZA_R:
+		if _in_town(p):
+			return true
+	if p.distance_to(CROSSROADS) < CROSSROADS_R:
+		return true
+	if _seg_dist(p, CROSSROADS, Vector2(CROSSROADS.x, TOWN.position.y + 60.0)) < TOWN_ROAD_W * 0.5:
 		return true
 	for c: Dictionary in CORRIDORS:
 		var pts: Array = c["points"]
@@ -90,6 +98,15 @@ static func _open(p: Vector2) -> bool:
 			if _seg_dist(p, pts[i], pts[i + 1]) < half:
 				return true
 	return false
+
+
+## Inside the Town's rounded rectangle.
+static func _in_town(p: Vector2) -> bool:
+	if not TOWN.has_point(p):
+		return false
+	var inner := TOWN.grow(-TOWN_CORNER)
+	var q := Vector2(clampf(p.x, inner.position.x, inner.end.x), clampf(p.y, inner.position.y, inner.end.y))
+	return p.distance_to(q) <= TOWN_CORNER
 
 
 static func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
@@ -127,12 +144,13 @@ func slide(from: Vector2, delta: Vector2) -> Vector2:
 	return from
 
 
-## The direction the flow field says to walk from `p` toward the Hearth.
+## The direction the flow field says to walk from `p` toward the nearest
+## standing building.
 func flow_at(p: Vector2) -> Vector2:
 	return flow[idx(p)]
 
 
-func steps_to_hearth(p: Vector2) -> float:
+func steps_to_town(p: Vector2) -> float:
 	return dist[idx(p)]
 
 
@@ -153,7 +171,7 @@ func nearest_open(p: Vector2) -> Vector2:
 				var q := Vector2((c.x + dx + 0.5) * CELL, (c.y + dy + 0.5) * CELL)
 				if is_open(q):
 					return q
-	return HEARTH
+	return SQUARE
 
 
 ## Whether a straight walk from `a` to `b` stays on open ground.
@@ -190,23 +208,24 @@ func path(a: Vector2, b: Vector2) -> PackedVector2Array:
 	return out
 
 
-func _build_flow() -> void:
+## The flow toward the buildings in `standing` (ids): every mob walks to the
+## nearest one. Built again by Sim when a building falls.
+func build_flow(standing: Array) -> void:
 	var n := w * h
 	dist.resize(n)
 	dist.fill(-1.0)
 	flow.resize(n)
 	flow.fill(Vector2.ZERO)
-	# Dijkstra on 8 neighbors from the Hearth's cells.
+	# Dijkstra on 8 neighbors from the open cells round each standing building.
 	var open: Array = []
-	var start := cell_of(HEARTH)
-	for dy in range(-2, 3):
-		for dx in range(-2, 3):
-			var c := start + Vector2i(dx, dy)
-			dist[c.y * w + c.x] = 0.0
-			open.append(c.y * w + c.x)
+	for id: String in standing:
+		for i: int in _round_cells(id):
+			if dist[i] < 0.0:
+				dist[i] = 0.0
+				open.append(i)
 	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
 		Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]
-	# A bucketed queue is enough: costs are 1 and 1.41.
+	# A plain queue is near enough: costs are 1 and 1.41.
 	var head := 0
 	while head < open.size():
 		var cur: int = open[head]
@@ -246,6 +265,27 @@ func _build_flow() -> void:
 			flow[i] = g.normalized()
 
 
+## The open cells within a swing of building `id`, where its attackers stand.
+var _round := {}
+
+
+func _round_cells(id: String) -> Array:
+	if _round.has(id):
+		return _round[id]
+	var out: Array = []
+	var foot := TownDefs.foot(id)
+	var reach := 45.0
+	var lo := cell_of(foot - Vector2(TownDefs.SOLID_R + reach + 80.0, TownDefs.BODY + TownDefs.SOLID_R + reach + 80.0))
+	var hi := cell_of(foot + Vector2(TownDefs.SOLID_R + reach + 80.0, TownDefs.SOLID_R + reach + 80.0))
+	for y in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			var i := y * w + x
+			if walk[i] == 1 and TownDefs.body_dist(id, Vector2((x + 0.5) * CELL, (y + 0.5) * CELL)) < reach:
+				out.append(i)
+	_round[id] = out
+	return out
+
+
 func _build_clearance() -> void:
 	clearance.resize(w * h)
 	clearance.fill(999.0)
@@ -282,7 +322,7 @@ static func portal(slot: int) -> Vector2:
 	return CORRIDORS[slot]["points"][0]
 
 
-## Where a hero of slot `slot` starts: inside its corridor's gate.
+## Where a hero of slot `slot` starts: in its corridor's gate.
 static func hero_start(slot: int) -> Vector2:
 	var pts: Array = CORRIDORS[slot]["points"]
-	return (pts[pts.size() - 1] as Vector2).lerp(HEARTH, 0.35)
+	return (pts[pts.size() - 2] as Vector2).lerp(pts[pts.size() - 1], 0.7)

@@ -2,8 +2,9 @@ class_name MapView
 extends Node2D
 ## Draws the map in the chapter's world: MatchRPG's backdrop colors for the
 ## rock, the floor and its plants or bricks, the portals the mobs climb out
-## of, the paths of the Town round the plaza and the Hearth's stones. Drawn once per
-## chapter; the Hearth's fire and the portals' glow are drawn live by View.
+## of, the Crossroads, and the Town: night grass, its streets and the pines
+## round it, as on MatchRPG's Town screen. Drawn once per chapter; the
+## buildings and the portals' glow are drawn live by View.
 
 var map: MapData
 var chapter := 0
@@ -43,7 +44,9 @@ func _draw() -> void:
 	for pass_i in 2:
 		var grow := 26.0 if pass_i == 0 else 0.0
 		var col := deco.darkened(0.45) if pass_i == 0 else floor_c
-		draw_circle(MapData.HEARTH, MapData.PLAZA_R + grow, col)
+		draw_circle(MapData.CROSSROADS, MapData.CROSSROADS_R + grow, col)
+		draw_line(MapData.CROSSROADS, Vector2(MapData.CROSSROADS.x, MapData.TOWN.position.y + 60.0), col,
+			MapData.TOWN_ROAD_W + grow * 2.0)
 		for c: Dictionary in MapData.CORRIDORS:
 			var pts: Array = c["points"]
 			draw_circle(pts[MapData.CHAMBER_AT], MapData.CHAMBER_R + grow, col)
@@ -52,18 +55,18 @@ func _draw() -> void:
 				var wdt := (MapData.GATE_W if i == pts.size() - 2 else MapData.CORRIDOR_W) + grow * 2.0
 				draw_line(pts[i], pts[i + 1], col, wdt)
 				draw_circle(pts[i + 1], wdt * 0.5, col)
-	# A worn path down the middle of each corridor, toward the Hearth.
+	# A worn path down the middle of each corridor, to the Crossroads.
 	for c: Dictionary in MapData.CORRIDORS:
 		var pts: Array = c["points"]
 		for i in pts.size() - 1:
 			draw_line(pts[i], pts[i + 1], path_c, 70.0)
 			draw_circle(pts[i + 1], 35.0, path_c)
-		draw_line(pts[pts.size() - 1], MapData.HEARTH, path_c, 70.0)
-	draw_circle(MapData.HEARTH, 260.0, path_c)
+		draw_line(pts[pts.size() - 1], MapData.CROSSROADS, path_c, 70.0)
+	draw_circle(MapData.CROSSROADS, 90.0, path_c)
 	# Speckle on the floor.
 	for i in 2600:
 		var p := Vector2(rng.randf() * MapData.SIZE.x, rng.randf() * MapData.SIZE.y)
-		if not map.is_open(p):
+		if not map.is_open(p) or MapData._in_town(p):
 			continue
 		draw_circle(p, rng.randf_range(1.5, 5.0), floor_c.lightened(rng.randf_range(0.03, 0.1)))
 	_draw_world_deco(rng, deco, wall)
@@ -87,8 +90,8 @@ func _draw() -> void:
 func _draw_world_deco(rng: RandomNumberGenerator, deco: Color, wall: Color) -> void:
 	for i in 700:
 		var p := Vector2(rng.randf() * MapData.SIZE.x, rng.randf() * MapData.SIZE.y)
-		# Only on the rock right by the floor.
-		if map.is_open(p) or not _near_floor(p, 70.0):
+		# Only on the rock right by the floor, and not by the Town (its pines).
+		if map.is_open(p) or not _near_floor(p, 70.0) or MapData.TOWN.grow(140.0).has_point(p):
 			continue
 		match chapter:
 			0:
@@ -130,35 +133,73 @@ func _near_floor(p: Vector2, r: float) -> bool:
 	return false
 
 
-## The Town round the Hearth: a worn path from the Hearth to each building's
-## door. The buildings themselves are drawn live by View (they grow as they
-## level), and so is the Hearth's fire.
+## The Town: night grass in its rounded square, the streets of TownDefs, the
+## pines round its edge, grass tufts, and the market well in the square.
+## The buildings themselves are drawn live by View (they grow as they
+## level, and fall).
+const GRASS := Color("2b3a2c")
+const STREET := Color("5a534c")
+const PINE := Color("1c2b22")
+
+
 func _draw_town() -> void:
-	var ch := ChapterDefs.get_def(chapter)
-	var path_c: Color = ch["path"]
-	# The town wall behind the southern row: a band of stone with a lit top.
-	var band := PackedVector2Array()
-	var steps := 40
-	for i in steps + 1:
-		var a := deg_to_rad(lerpf(TownDefs.WALL_FROM, TownDefs.WALL_TO, float(i) / steps))
-		band.append(MapData.HEARTH + Vector2.from_angle(a) * TownDefs.WALL_IN)
-	for i in range(steps, -1, -1):
-		var a := deg_to_rad(lerpf(TownDefs.WALL_FROM, TownDefs.WALL_TO, float(i) / steps))
-		band.append(MapData.HEARTH + Vector2.from_angle(a) * (MapData.PLAZA_R + 30.0))
-	draw_colored_polygon(band, Color("4a4540"))
-	draw_polyline(band.slice(0, steps + 1), Color("6e6a64"), 10.0)
-	for i in range(0, steps + 1, 2):
-		var a := deg_to_rad(lerpf(TownDefs.WALL_FROM, TownDefs.WALL_TO, float(i) / steps))
-		var at := MapData.HEARTH + Vector2.from_angle(a) * (TownDefs.WALL_IN + 22.0)
-		draw_rect(Rect2(at - Vector2(14, 8), Vector2(28, 16)), Color("5c5650"))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var box := MapData.TOWN
+	var inner := box.grow(-MapData.TOWN_CORNER)
+	# The grass: the rounded square as a cross of rects and four discs.
+	for pass_i in 2:
+		var grow := 22.0 if pass_i == 0 else 0.0
+		var col := PINE.darkened(0.2) if pass_i == 0 else GRASS
+		draw_rect(Rect2(box.position.x - grow, inner.position.y, box.size.x + grow * 2.0, inner.size.y), col)
+		draw_rect(Rect2(inner.position.x, box.position.y - grow, inner.size.x, box.size.y + grow * 2.0), col)
+		for c: Vector2 in [inner.position, Vector2(inner.end.x, inner.position.y), inner.end, Vector2(inner.position.x, inner.end.y)]:
+			draw_circle(c, MapData.TOWN_CORNER + grow, col)
+	# The road from the Crossroads reads as the Town's own street.
+	draw_line(MapData.CROSSROADS, Vector2(MapData.CROSSROADS.x, box.position.y + 40.0), GRASS, MapData.TOWN_ROAD_W)
+	# Grass tufts.
+	for i in 900:
+		var p := Vector2(rng.randf_range(box.position.x, box.end.x), rng.randf_range(box.position.y, box.end.y))
+		if not MapData._in_town(p):
+			continue
+		var c := GRASS.darkened(rng.randf_range(0.1, 0.35))
+		for k in 3:
+			draw_line(p, p + Vector2((k - 1) * 5.0, -rng.randf_range(8, 15)), c, 2.0)
+	# The streets.
+	for st: Array in TownDefs.STREETS:
+		var pts := PackedVector2Array(st)
+		draw_polyline(pts, STREET.darkened(0.25), 84.0)
+		for p: Vector2 in pts:
+			draw_circle(p, 42.0, STREET.darkened(0.25))
+	for st: Array in TownDefs.STREETS:
+		var pts := PackedVector2Array(st)
+		draw_polyline(pts, STREET, 70.0)
+		for p: Vector2 in pts:
+			draw_circle(p, 35.0, STREET)
 	for id: String in TownDefs.ids():
-		var door := TownDefs.door(id)
-		draw_line(MapData.HEARTH, door, path_c, 56.0)
-		draw_circle(door, 46.0, path_c)
-		draw_circle(door, 30.0, path_c.lightened(0.06))
-	# The Hearth's ring of stones.
-	for k in 16:
-		var p := MapData.HEARTH + Vector2.from_angle(k * TAU / 16.0) * 110.0
-		draw_circle(p, 16.0, Color("6e6a64"))
-		draw_circle(p + Vector2(-3, -4), 7.0, Color("8a857c"))
-	draw_circle(MapData.HEARTH, 92.0, Color("2a2018"))
+		draw_circle(TownDefs.door(id), 40.0, STREET)
+	# The market well in the square.
+	var sq := MapData.SQUARE + Vector2(0, -10)
+	Kept.oval(self, Rect2(sq - Vector2(46, 10), Vector2(92, 30)), Color(0, 0, 0, 0.3))
+	draw_circle(sq, 34.0, Color("6e6a64"))
+	draw_circle(sq, 24.0, Color("1a1820"))
+	draw_line(sq + Vector2(-30, 0), sq + Vector2(-30, -56), Color("4a3424"), 6.0)
+	draw_line(sq + Vector2(30, 0), sq + Vector2(30, -56), Color("4a3424"), 6.0)
+	draw_colored_polygon(PackedVector2Array([sq + Vector2(-44, -50), sq + Vector2(0, -78), sq + Vector2(44, -50)]), Color("7a4a3a"))
+	# Pines round the Town's edge, as on MatchRPG's Town screen.
+	for i in 140:
+		var a := rng.randf() * TAU
+		var p := box.get_center() + Vector2(cos(a) * (box.size.x * 0.5 + 60.0), sin(a) * (box.size.y * 0.5 + 60.0))
+		p += Vector2(rng.randf_range(-70, 70), rng.randf_range(-70, 70))
+		if map.is_open(p) or map.is_open(p + Vector2(0, 30)):
+			continue
+		_pine(p, rng.randf_range(0.8, 1.3))
+
+
+func _pine(p: Vector2, k: float) -> void:
+	draw_rect(Rect2(p + Vector2(-5, -6) * k, Vector2(10, 16) * k), Color("3a2a1c"))
+	for t in 3:
+		var w := (44.0 - t * 10.0) * k
+		var y := p.y - (8.0 + t * 22.0) * k
+		draw_colored_polygon(PackedVector2Array([Vector2(p.x - w * 0.5, y), Vector2(p.x, y - 34.0 * k), Vector2(p.x + w * 0.5, y)]),
+			PINE.lightened(0.04 * t))

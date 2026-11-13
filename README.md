@@ -1,6 +1,6 @@
 # Hearthguard
 
-A co-op hero defense set in the world of MatchRPG (Ondoheer, Kingsfoil Studios). Everything the heroes went down to fight in MatchRPG is climbing up to the Town. One to three players hold the corridors and keep the Hearth lit through five chapters, one for each MatchRPG world, each ending with that world's boss. The Hearth stands in the middle of MatchRPG's whole Town, whose nine buildings the heroes build and level up with gold, and road fires burn along every corridor until the dark comes for them.
+A co-op hero defense set in the world of MatchRPG (Ondoheer, Kingsfoil Studios). Everything the heroes went down to fight in MatchRPG is climbing up to the Town. One to three players hold the corridors and keep the Town standing through five chapters, one for each MatchRPG world, each ending with that world's boss. The corridors meet at a crossroads north of MatchRPG's whole Town. Its nine buildings are what the heroes defend: they build and level them up with gold, mobs that get past bash them to ruins, and the run is lost when the last one falls. Road fires burn along every corridor until the dark comes for them.
 
 Built with Godot 4.7, like MatchRPG, so its art code, sounds and fonts are used as they are.
 
@@ -19,9 +19,9 @@ Built with Godot 4.7, like MatchRPG, so its art code, sounds and fonts are used 
 | ![The Fighter against Astaroth](docs/screenshots/fighter-astaroth.png) | ![The Archer in the Underground Forest](docs/screenshots/archer-forest.png) |
 | The Fighter against Astaroth while the lava rises (chapter 5). | The Archer holds the West Passage in the Underground Forest (chapter 1). |
 
-![The Town round the Hearth](docs/screenshots/town.png)
+![The Town](docs/screenshots/town.png)
 
-The Town round the Hearth, some buildings levelled and the Alchemist not built yet, with its card open at the hero's feet.
+The Town, laid out like MatchRPG's Town screen turned upside down, with the Woodcutter in ruins and some buildings not built yet.
 
 Screenshots come from `tests/shot.tscn` and `tests/menu_shot.tscn` (see Tests).
 
@@ -57,8 +57,8 @@ The lab preset's "moba" scheme.
 | Q W E R | Cast. Aimed spells wait for a left click (F2 switches to quick cast) |
 | Ctrl + Q W E R, or the gold "+" | Learn or rank up an ability |
 | 1 2 3 4 | Drink a potion from the belt |
-| T / B | Talents / the Alchemist (by the Hearth, or anywhere at the campfire) |
-| F | Build or level up the Town building whose door you stand at |
+| T / B | Talents / the Alchemist (at the market well in the town square, or anywhere at the campfire) |
+| F | Build, level up or rebuild the Town building whose door you stand at |
 | Space (or Enter) | Call the next wave now, during any countdown. Pays gold for each second skipped. In co-op every player has to call |
 | C / Y | Camera to your hero / switch between follow and free camera |
 | Wheel, arrows, screen edges | Zoom and pan |
@@ -140,8 +140,8 @@ The study's advice was to start simple and fun-first before trying anything clev
 
 | Study step | Here |
 | --- | --- |
-| Flow field, one per destination | `MapData` builds one field to the Hearth; every marching mob reads it |
-| Mob FSM with leash, aggro, camp/wave split | Every mob is a wave marcher. A mob notices a hero within its threat range (ranged mobs 20% past their reach, melee mobs 340 px, chargers 460 px) and drops them past the same distance, then marches on to the Hearth. A hit holds a mob on its attacker for 3 s at any distance and turns the marching mobs within 140 px with it. A hero who hides or runs too far leaves the crowd to the Hearth |
+| Flow field, one per destination | `MapData` builds one field to the nearest standing building, again each time one falls; every marching mob reads it |
+| Mob FSM with leash, aggro, camp/wave split | Every mob is a wave marcher. A mob notices a hero within its threat range (ranged mobs 20% past their reach, melee mobs 340 px, chargers 460 px) and drops them past the same distance, then marches on to the Town. A hit holds a mob on its attacker for 3 s at any distance and turns the marching mobs within 140 px with it. A hero who hides or runs too far leaves the crowd to the Town |
 | Attack tokens and the hate ring | 6 melee and 4 ranged tokens per hero, plus 1 per chapter. Mobs without a token circle the hero and never stand still. Tokens are counted again every 2 s |
 | Separation and speed variation | Soft separation on a spatial hash, plus or minus 10% speed, 0.15-0.35 s reaction jitter. Heroes wade through crowds |
 | Wave commander and director | `Director` runs the cycle: build up (packs), peak, relax (the preset's 12 s gap). It only paces, it never adjusts stats. Bosses are left out of pacing |
@@ -153,7 +153,8 @@ Steps 9-11 (influence maps, adaptation, learned models) are left out. The study 
 
 ## The game
 
-- **The Town.** MatchRPG's nine buildings stand round the Hearth, drawn with its own `BuildingIcon` art (`TownDefs`). Seven stand in a row along the south with the town wall behind them, and one in each gap between the gates up north. Each starts as a dark, empty shape. Standing at its door opens its card, and gold (F, or the card's button) activates it and levels it up to 5. Every level adds the art's next parts, and level 5 wears MatchRPG's gold star. A level costs the building's base price times 1.7 for each level already built, 100 to 150 gold for the first and 835 to 1,255 for the fifth. The Town is shared: any hero pays, every hero gets the bonus.
+- **The Town.** MatchRPG's nine buildings, drawn with its own `BuildingIcon` art (`TownDefs`), stand along the Town's streets the way MatchRPG's Town screen lays them out, flipped top to bottom. The open end faces north, where the road from the Crossroads comes in. The Mint and the Alchemist stand there first, then the Woodcutter, Forge, Tinker and Quarry, and the Barracks, Mage Tower and Armory at the back. Each starts as a dark, empty shape. Standing at its door opens its card, and gold (F, or the card's button) activates it and levels it up to 5. Every level adds the art's next parts, and level 5 wears MatchRPG's gold star. A level costs the building's base price times 1.7 for each level already built, 100 to 150 gold for the first and 835 to 1,255 for the fifth. The Town is shared: any hero pays, every hero gets the bonus.
+- **Defending the Town.** The buildings took the Hearth's place. A mob that gets past the heroes walks to the nearest standing building and bashes it (a boss does half). Each building has 1,500 HP in chapter 1 for one player, times the chapter's mob attack scale, +50% per extra player, +15% per level and the Quarry's bonus. At 0 HP it is a ruin: its bonus is gone, the mobs move on to the next, and a banner says how many still stand. A hero at a ruin's door can rebuild it for the price of the level it had, and it comes back at that level with half its HP. The campfire mends every standing building by half its max HP. When all nine are ruins, the Town has fallen and the run is lost. The play logs keep their `hearth_*` fields, now meaning the Town's HP, so older plays and the dashboard still line up.
 
   | Building | Per level |
   | --- | --- |
@@ -162,31 +163,33 @@ Steps 9-11 (influence maps, adaptation, learned models) are left out. The study 
   | Mage Tower | +5% ability damage |
   | Forge | +5% damage |
   | Tinker | Road fires +30% HP and kindle speed |
-  | Quarry | Hearth +12% max HP, and that much mended |
+  | Quarry | +15% HP for every building, and that much mended |
   | Alchemist | Potions 8% off, and its door is a shop |
   | Mint | +12% gold from kills and early calls |
   | Woodcutter | Road fires heal 30% more |
 
-  MatchRPG's Tinker, Woodcutter and Quarry made traps fail and brought wood and stone, which this game has none of, so here they feed the road fires and the Hearth.
-- **Road fires.** Two small hearths burn in each open corridor, one in its chamber and one where its gate begins (`MapData.fire_spots`). They are drawn at 60% of the Hearth's fire. A mob that passes within 300 px of a lit fire leaves its march and bashes it until it goes out, and only a hit turns it on a hero. A fire has 1,400 HP in chapter 1, growing with the chapter's mob damage. A hero standing in a lit fire's ring (210 px) heals 3% of max HP a second, and mends the fire while no mob is in the ring. Holding an unlit fire's ring for 5 seconds, a hero in it and no mob, lights it again. Mobs alone in the ring undo the progress. The campfire between chapters relights them all.
-- **The dark.** When every road fire is out, night falls on the field: only the light round each hero, the Hearth and any lit fire shows through. One fire lit brings the day back. The Deep Wyrm's last phase puts out the lights too, until its chapter ends. At the start of chapter 4, the next-to-last world, the dark swallows the road fires for good, and chapters 4 and 5 are played in the dark (`Sim.dark_chapter`).
+  MatchRPG's Tinker, Woodcutter and Quarry made traps fail and brought wood and stone, which this game has none of, so here they feed the road fires and the Town's walls.
+- **Road fires.** Two small hearths burn in each open corridor, one in its chamber and one where its gate begins (`MapData.fire_spots`). A mob that passes within 300 px of a lit fire leaves its march and bashes it until it goes out, and only a hit turns it on a hero. A fire has 1,400 HP in chapter 1, growing with the chapter's mob damage. A hero standing in a lit fire's ring (210 px) heals 3% of max HP a second, and mends the fire while no mob is in the ring. Holding an unlit fire's ring for 5 seconds, a hero in it and no mob, lights it again. Mobs alone in the ring undo the progress. The campfire between chapters relights them all.
+- **The dark.** When every road fire is out, night falls on the field: only the light round each hero, each standing building and any lit fire shows through. One fire lit brings the day back. The Deep Wyrm's last phase puts out the lights too, until its chapter ends. At the start of chapter 4, the next-to-last world, the dark swallows the road fires for good, and chapters 4 and 5 are played in the dark (`Sim.dark_chapter`).
 - **Calling waves.** Every countdown (the intro, the 12 s gap, the campfire) can be cut short with Space. Each hero gets 2 gold a second skipped, times the chapter's gold multiplier.
 - **Auto-attack** picks up mobs within 105% of a ranged hero's reach and twice a melee hero's, so an idle hero doesn't run at mobs it hasn't met.
 - **Gold.** Kill gold grows 70% a chapter. Meteor (150), Aegis (240), Cataclysm (320) and Clone (160) cost enough to be a last resort.
-- **Five chapters, six waves each.** Two plain waves, the world's first elite (wave 3), the Horde (wave 4: three surges, each a wall of mobs out of the portal at once), the second elite (wave 5), then the world boss with adds streaming down every open corridor. A 25 s campfire break comes between chapters: full heal, the Alchemist, half the Hearth back.
+- **Five chapters, six waves each.** Two plain waves, the world's first elite (wave 3), the Horde (wave 4: three surges, each a wall of mobs out of the portal at once), the second elite (wave 5), then the world boss with adds streaming down every open corridor. A 25 s campfire break comes between chapters: full heal, the Alchemist, the Town mended by half.
+- **A jagged chapter.** Each chapter follows `ChapterDefs.WAVE_SHAPE`, from the curves study's sawtooth: a push-back (wave 1, the chapter's new numbers), a mow (wave 2, 80% HP and a quarter more fodder), a spike (the first elite with a guard of brutes), the Horde (70% HP, very many), the wall (the second elite and the chapter's hardest crowd, 130% HP and 125% attack), then the boss. Each wave also sets the share of packs drawn from the roster's brutes, chargers and casters instead of its fodder, so tough packs and swarms take turns inside a wave. Fodder gets softer next to the chapter each world (down to 70% by chapter 5) and brutes and chargers harder (up to 195%), so there is always something to mow and something that pushes back.
 - **Mobs** have four brains. Fodder bites. Ranged mobs throw MatchRPG's missiles and kite. Brutes hit hard. Chargers (the Boar) wind up a telegraphed dash. Many have a small trait: webs and spores slow, vines root, the gnome hexes, serpents poison, hellhounds burn, the Gibbering Mass splits, Ualac drops gold.
 - **Elites** use their MatchRPG move as an area attack. The Ogre King throws rocks, the Broodmother webs and births spiders, and the Lich curses a hero, which bursts on allies near them. The Orc Warlord's war cry speeds the crowd, the Crystal Golem spins, and the Matriarch drops poison. The Hierophant's ritual summons unless you break it with 12% of its HP, the Shoggoth slams tentacles, Amdusias' songs swap his immunity, and Belial charges trailing fire.
 - **Bosses.** Old Mossback regenerates until wounded, and a hard hit staggers his Log Slam. The Warden shackles, throws his ball and chain, and locks down a ring. The Deep Wyrm burrows under you, breathes and sweeps, and turns out the lights in its last phase. The Sleeper Below reaches with tentacles, stuns with its gaze, slips the angles and dreams. Astaroth raises the lava, seals the ground and calls a hellstorm.
 - **Heroes.** The Fighter (Blade) cleaves. The Mage (Arcane) splashes. Flow (MatchRPG's Rogue) builds Flow with every hit in a row. The Archer (new) has the longest reach. Each has Q W E and an ultimate R.
 - **Growth** mixes Warcraft III and MatchRPG. Every level gives a point for Q/W/E (ranks 1-4 at levels 1/3/5/7) or R (ranks 1-3 at 6/11/16). At levels 4, 8, 12, 16 and 20, each class picks one of three talents in a MatchRPG talent row (5 rows x 3 per class, 60 in all). Every talent taken also dresses the hero one rank further in MatchRPG's art.
-- **Power curve.** Hero damage grows 9% a level, faster than a chapter's mobs, so a chapter ends in a mow and the next one's first wave pushes back. Every mob dies to any hit under 8% HP (an execute with a gold cut and a beat of slow motion), and talents raise that line.
+- **Power curve.** Hero damage grows 9% a level, and talents, ability ranks and the Town multiply that. Chapter scales climb to match: mob HP 1, 2.9, 7, 14.5 and 28 times chapter 1, and attack 1, 1.8, 3, 4.7 and 6.8 (`ChapterDefs.HP_SCALE`, `ATK_SCALE`). With the old 1 to 13 HP a Mage who built the Town cleared all 30 waves without dying.
+- **New talents land.** Picking a talent bursts round the hero for six times their damage (fodder goes flat, the rest is thrown back and stunned), and their hits do double for 6 seconds (`Skills.talent_burst`). Every mob dies to any hit under 8% HP (an execute with a gold cut and a beat of slow motion), and talents raise that line.
 - **Feel.** Hit stop and flash from the preset. Big hits and AoE kills fling bodies, executes get their own flourish, multikills call out ("Rout", "Slaughter", "Massacre", "Annihilation"), and the camera kicks on slams and booms.
 
 ## Code
 
 | Path | What |
 | --- | --- |
-| `scripts/game/sim.gd` | The host's simulation: mobs, damage, the Hearth, the road fires, the dark, building, snapshots |
+| `scripts/game/sim.gd` | The host's simulation: mobs, damage, the Town's buildings and ruins, the road fires, the dark, building, snapshots |
 | `scripts/game/director.gd` | Waves, hordes, campfire, victory |
 | `scripts/game/brains.gd` | Elites and world bosses |
 | `scripts/game/skills.gd` | Attacks, abilities, talent hooks, potions, the Alchemist |
@@ -210,7 +213,7 @@ The host runs the only `Sim`. Each client moves its own hero and sends its posit
     godot --headless --path . res://tests/net_test.tscn -- --role=host --players=2    # then, in another shell:
     godot --headless --path . res://tests/net_test.tscn -- --role=client
     godot --path . res://tests/shot.tscn -- --cls=mage --chapter=3 --wave=3 --times=12   # screenshots to tests/shots
-    godot --path . res://tests/shot.tscn -- --cls=mage --times=10 --town=0 --at=2000,2330 --zoom=0.5   # the Town
+    godot --path . res://tests/shot.tscn -- --cls=mage --times=10 --town=0 --at=2000,2250 --zoom=0.4 --ruin=woodcutter   # the Town
     godot --path . res://tests/menu_shot.tscn                                            # the menu, to tests/shots/menu.png
 
-The bot stays by its gate (it only fights mobs within 900 px of it), walks round the Town's buildings the way a click does, never dodges a telegraph, never relights a fire and never buys a potion, so its results are a floor for what a person does. Latest runs (with the Town and road fires), building the Town with `--build`: a Fighter, Mage and Archer team, a solo Fighter and a solo Mage win all five chapters, the Archer falls at the chapter 4 boss and Flow at the chapter 4 horde. Without building: the team falls at chapter 5's second elite, the Fighter at Astaroth, the Mage at chapter 5's second elite, Flow and the Archer at the chapter 3 boss. `--rush` makes the bot call every wave early. The host simulation costs about 0.2 ms a tick solo and 0.5 ms with three corridors.
+The bot stays by its gate (it only fights mobs within 900 px of it) until a mob bashes a building, then walks back to defend. It walks round the Town's buildings the way a click does, never dodges a telegraph, never relights a fire and never buys a potion, so its results are a floor for what a person does. Each wave prints a line: its length, the lowest hero HP, deaths, what the Town lost, the peak number of mobs alive, how many reached a building, and ruins. `--hp=1,2.9,...` and `--atk=1,1.8,...` try other chapter scales. Latest runs, seeds 7, 11 and 23, building the Town with `--build`: the Mage wins all three with 4-6 deaths and a ruin or two along the way, the Fighter wins one and falls at the chapter 4 or 5 boss in the others, the Archer and Flow fall in chapters 3-5. Without building, the Fighter and the Mage fall in chapters 3-5. Two- and three-bot teams win with a few ruins. `--rush` makes the bot call every wave early. The host simulation costs about 0.2 ms a tick solo and 0.5 ms with three corridors.

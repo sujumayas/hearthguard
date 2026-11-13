@@ -301,11 +301,13 @@ func _draw_top(size: Vector2) -> void:
 			_text_c(cx, 56, "Victory", 22, GOLD)
 	if phase in [Director.Phase.INTRO, Director.Phase.GAP, Director.Phase.CAMP] and float(d.get("t", 0.0)) > 0.5:
 		_draw_call(r, d)
-	# The Hearth.
-	var hf: float = game.hearth_frac()
+	# The Town: every building's HP together, and how many still stand.
+	var hf: float = game.town_frac()
 	var hb := Rect2(r.position.x + 20, r.end.y - 14, r.size.x - 40, 8)
 	_bar(hb, hf, Color("f0a23c") if hf > 0.3 else Color("ff6a3d"))
-	_text(Vector2(hb.position.x, hb.position.y - 1), "Hearth", 11, Color(1, 1, 1, 0.6))
+	var standing := TownDefs.ids().size() - (state.get("ruins", {}) as Dictionary).size()
+	_text(Vector2(hb.position.x, hb.position.y - 1), "Town  ·  %d of %d standing" % [standing, TownDefs.ids().size()], 11,
+		Color(1, 1, 1, 0.6) if standing > 3 else Color("ff8a6a"))
 	_draw_fire_marks(r)
 
 
@@ -342,15 +344,20 @@ func _building_here() -> String:
 
 
 ## Standing at a building's door: what it gives, what the next level costs,
-## and a button (F) to pay for it.
+## and a button (F) to pay for it. A ruin offers its rebuild instead.
 func _draw_building_card(size: Vector2) -> void:
 	var id := _building_here()
 	if id == "" or talents_open or shop_open:
 		return
 	var town: Dictionary = state.get("town", {})
+	var ruins: Dictionary = state.get("ruins", {})
 	var bd := TownDefs.get_def(id)
 	var lv := TownDefs.level(town, id)
 	var price := TownDefs.cost(town, id)
+	var ruined := ruins.has(id)
+	if ruined:
+		lv = int(ruins[id])
+		price = TownDefs.rebuild_cost(id, lv)
 	var gold := int(me.get("gold", 0))
 	var w := 460.0
 	var h := 112.0
@@ -359,22 +366,32 @@ func _draw_building_card(size: Vector2) -> void:
 	Kept.rect(root, r.grow(2), Color(0, 0, 0, 0.5))
 	Kept.rect(root, r, Color(0.08, 0.07, 0.11, 0.95))
 	var icon := Rect2(r.position + Vector2(8, 8), Vector2(96, 96))
-	BuildingIcon.draw_building(root, id, icon, lv > 0, Color.TRANSPARENT, Color.TRANSPARENT, 0.0, lv * TownDefs.ART_STEP)
+	BuildingIcon.draw_building(root, id, icon, lv > 0 and not ruined, Color.TRANSPARENT, Color.TRANSPARENT, 0.0,
+		lv * TownDefs.ART_STEP)
 	var x := r.position.x + 114
 	_text(Vector2(x, r.position.y + 28), bd["name"], 20, BONE, heading_font)
-	_text(Vector2(r.end.x - 132, r.position.y + 28), "Not built" if lv == 0 else "Level %d / %d" % [lv, TownDefs.MAX], 14,
-		GOLD if lv > 0 else DIM, body_font, HORIZONTAL_ALIGNMENT_RIGHT, 120)
+	var tag := "Ruin" if ruined else ("Not built" if lv == 0 else "Level %d / %d" % [lv, TownDefs.MAX])
+	var hp_frac := float(state.get("bhp", {}).get(id, 1.0))
+	if not ruined and hp_frac < 0.999:
+		tag += "  ·  %d%% HP" % roundi(hp_frac * 100.0)
+	_text(Vector2(r.end.x - 172, r.position.y + 28), tag, 14,
+		Color("ff8a6a") if ruined else (GOLD if lv > 0 else DIM), body_font, HORIZONTAL_ALIGNMENT_RIGHT, 160)
 	_text(Vector2(x, r.position.y + 50), bd["desc"], 13, Color(1, 1, 1, 0.75), body_font, HORIZONTAL_ALIGNMENT_LEFT, w - 124)
-	if price < 0:
+	if ruined:
+		_text(Vector2(x, r.position.y + 72), "Rebuild it at level %d, with half its HP." % maxi(1, lv), 13,
+			Color("ffd98a"), body_font)
+	elif price < 0:
 		_text(Vector2(x, r.position.y + 88), "Fully built.", 16, GOLD, heading_font)
 		return
-	_text(Vector2(x, r.position.y + 72), ("Activate: " if lv == 0 else "Level %d: " % (lv + 1)) + TownDefs.next_text(town, id),
-		13, Color("ffd98a"), body_font)
+	else:
+		_text(Vector2(x, r.position.y + 72), ("Activate: " if lv == 0 else "Level %d: " % (lv + 1)) + TownDefs.next_text(town, id),
+			13, Color("ffd98a"), body_font)
 	var b := Rect2(x, r.position.y + 78, w - 124, 28)
 	var afford := gold >= price
 	Kept.rect(root, b, (Color("6a5a24") if b.has_point(mouse) else Color("4a3f1c")) if afford else Color(0.18, 0.16, 0.2))
 	var key := "" if Touch.on else "  (F)"
-	_text_c(b.get_center().x, b.position.y + 20, "%s for %d gold%s" % ["Build" if lv == 0 else "Level up", price, key], 15,
+	var verb := "Rebuild" if ruined else ("Build" if lv == 0 else "Level up")
+	_text_c(b.get_center().x, b.position.y + 20, "%s for %d gold%s" % [verb, price, key], 15,
 		BONE if afford else DIM, body_font)
 	var bid := id
 	_hit(b, func() -> void: game.send_build(bid))
@@ -663,7 +680,7 @@ func _draw_shop(size: Vector2) -> void:
 	var near: bool = Skills.near_shop(game.ctrl.pos, town)
 	var d: Dictionary = state.get("dir", {})
 	var can := near or int(d.get("phase", -1)) == Director.Phase.CAMP
-	var where := "by the Hearth or the Alchemist's door" if TownDefs.level(town, "alchemist") > 0 else "by the Hearth"
+	var where := "at the market well or the Alchemist's door" if TownDefs.level(town, "alchemist") > 0 else "at the market well in the town square"
 	_text(r.position + Vector2(20, 34), "The Alchemist", 24, Color("4fd1c5"), heading_font)
 	_text(r.position + Vector2(20, 56), ("Open at the campfire, or " + where + ".") if can else "Come back to buy, " + where + ".",
 		14, DIM if can else Color("ff8a8a"))
@@ -701,7 +718,7 @@ func _draw_help(size: Vector2) -> void:
 		"Space: call the next wave early, for gold", "F: build at a Town building's door",
 		"C: camera to you   Y: lock camera", "Wheel: zoom   Arrows/edges: pan",
 		"Keep the road fires lit: they heal you.", "Hold an unlit fire's ring to light it.",
-		"Hold your corridor. Keep the Hearth lit.", "F1: hide this"]
+		"Hold your corridor. Don't let the Town's buildings fall.", "F1: hide this"]
 	_text(r.position + Vector2(16, 30), "How to play", 20, BONE, heading_font)
 	for i in lines.size():
 		_text(r.position + Vector2(16, 58 + i * 23), lines[i], 14, Color(1, 1, 1, 0.8))
@@ -885,12 +902,13 @@ func _draw_minimap(size: Vector2) -> void:
 	for lane in 3:
 		var p := r.position + MapData.portal(lane) * s
 		Kept.disc(root, p, 4.0, Color("8a7dff") if lane in game.active_lanes() else Color(0.3, 0.3, 0.3))
-	Kept.disc(root, r.position + MapData.HEARTH * s, 5.0, Color("f0a23c"))
 	var town: Dictionary = state.get("town", {})
+	var ruins: Dictionary = state.get("ruins", {})
 	for id: String in TownDefs.ids():
 		var built := TownDefs.level(town, id) > 0
-		var bp := r.position + TownDefs.foot(id) * s
-		root.draw_rect(Rect2(bp - Vector2(3, 3), Vector2(6, 6)), Color("ffd98a") if built else Color(0.45, 0.42, 0.5))
+		var bp := r.position + (TownDefs.foot(id) + Vector2(0, -60)) * s
+		var col := Color("ff5a3d") if ruins.has(id) else (Color("ffd98a") if built else Color(0.45, 0.42, 0.5))
+		root.draw_rect(Rect2(bp - Vector2(3, 3), Vector2(6, 6)), col)
 	for f: Array in state.get("fires", []):
 		var st: int = f[1]
 		Kept.disc(root, r.position + (f[0] as Vector2) * s, 4.0,
@@ -991,7 +1009,7 @@ func _draw_touch_help(_size: Vector2) -> void:
 		"Drag back onto the button to cancel", "Gold +: learn or rank up an ability", "Potions, Talents, Alchemist: tap",
 		"Call it: the next wave early, for gold", "Town buildings: walk to the door, tap Build",
 		"Road fires heal you. Stand in an unlit one's ring to light it", "Two fingers: pinch to zoom",
-		"Hold your corridor. Keep the Hearth lit."]
+		"Hold your corridor. Don't let the Town's buildings fall."]
 	var r := Rect2(12, 12.0 + 64.0 * n + 54.0, 400, 50 + lines.size() * 22)
 	_panel(r, Color(0.08, 0.07, 0.11, 0.9))
 	_text(r.position + Vector2(16, 30), "How to play", 20, BONE, heading_font)

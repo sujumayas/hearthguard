@@ -654,14 +654,14 @@ static func drink(sim: Sim, h: HeroState, i: int, tp: Vector2) -> void:
 	sim.emit(["snd", def.get("sound", "potion"), 0.9])
 
 
-## The shop is open at the campfire, by the Hearth, and at the Alchemist's
-## door once it is built.
+## The shop is open at the campfire, at the market in the town square, and
+## at the Alchemist's door while it is built and standing.
 static func can_shop(sim: Sim, h: HeroState) -> bool:
 	return sim.director.phase == Director.Phase.CAMP or near_shop(h.pos, sim.town)
 
 
 static func near_shop(p: Vector2, town: Dictionary) -> bool:
-	return p.distance_to(MapData.HEARTH) < 340.0 \
+	return p.distance_to(MapData.SQUARE) < 340.0 \
 		or (TownDefs.level(town, "alchemist") > 0 and p.distance_to(TownDefs.door("alchemist")) < TownDefs.BUILD_R)
 
 
@@ -703,3 +703,26 @@ static func pick_talent(sim: Sim, h: HeroState, row: int, choice: int) -> void:
 		h.ward = h.fx("ward") * h.max_hp()
 	sim.emit(["talent", h.slot, row, h.talents[row]])
 	sim.emit(["snd", "achievement", 0.8])
+	talent_burst(sim, h)
+
+
+## A new talent lands as a burst: it hits everything round the hero for
+## TALENT_BURST times their damage (fodder goes flat, the rest is thrown
+## back and stunned), and their hits do double for TALENT_SURGE seconds.
+## The wave notices the hero got stronger, right when they did.
+const TALENT_BURST := 6.0
+const TALENT_BURST_R := 380.0
+const TALENT_SURGE := 6.0
+
+
+static func talent_burst(sim: Sim, h: HeroState) -> void:
+	if not h.alive:
+		return
+	for m: Mob in sim.mobs_near(h.pos, TALENT_BURST_R):
+		sim.damage_mob(m, float(h.stats["dmg"]) * TALENT_BURST, "pure", h.slot, {"aoe": true})
+		sim.push_mob(m, (m.pos - h.pos).normalized(), 520.0)
+		sim.stun_mob(m, 1.0)
+	h.surge_t = maxf(h.surge_t, TALENT_SURGE)
+	h.untouchable_t = maxf(h.untouchable_t, 0.6)
+	sim.emit(["boom", "talent", h.pos.x, h.pos.y, TALENT_BURST_R])
+	sim.emit(["snd", "blast", 1.0])

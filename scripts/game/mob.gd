@@ -3,7 +3,7 @@ extends RefCounted
 ## One mob on the host. Plain fields: there can be hundreds, and MobSim
 ## steps them all in one loop.
 
-enum State { MARCH, CHASE, HEARTH, CHARGE_WIND, CHARGING, BURROWED, FIRE, DEAD }
+enum State { MARCH, CHASE, SIEGE, CHARGE_WIND, CHARGING, BURROWED, FIRE, DEAD }
 
 var id := 0
 var kind := ""
@@ -32,6 +32,8 @@ var state := State.MARCH
 var target := -1
 ## The road fire it is bashing (an index into Sim.fires), in State.FIRE.
 var fire := -1
+## The Town building it is bashing (a TownDefs id), in State.SIEGE.
+var bld := ""
 var token := false
 var atk_cd := 0.0
 ## Seconds left in the current attack's wind-up (0 when not attacking), and

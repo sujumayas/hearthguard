@@ -69,7 +69,7 @@ func setup(g: Node, m: MapData, v: View, s: int, c: String) -> void:
 	slot = s
 	cls = c
 	pos = MapData.hero_start(s)
-	heading = (MapData.HEARTH - pos).angle()
+	heading = (MapData.SQUARE - pos).angle()
 	quick_cast = str(Tuning.get_v("input.castMode", "confirm")) == "quick"
 	stats = HeroStats.compute(cls, 1, [])
 
@@ -472,7 +472,8 @@ func _attack_step(dt: float) -> void:
 	if auto and d > acquire_reach() * 1.25:
 		order = Order.IDLE
 		return
-	if d > reach:
+	# Out of reach, or in reach behind rock (shots stop at walls): walk on.
+	if d > reach or not map.line_open(pos, tp):
 		if backswing > 0.0:
 			return
 		repath_t -= dt

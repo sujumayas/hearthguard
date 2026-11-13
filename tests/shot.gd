@@ -4,7 +4,9 @@ extends Node
 ##   godot --path . res://tests/shot.tscn -- --cls=archer --times=4,12,30 --speed=2 --chapter=0
 ## --town=N builds every Town building to level N (0 leaves some unbuilt to
 ## compare), --at=x,y puts the hero there, --zoom=z sets the camera's zoom,
-## --out=a,b puts out road fires a and b, --kindle=a holds fire a half lit.
+## --out=a,b puts out road fires a and b, --kindle=a holds fire a half lit,
+## --ruin=a,b knocks down Town buildings a and b, --hurt=a,b takes half of
+## their HP.
 
 var times: Array = [4.0, 12.0, 30.0]
 var taken := 0
@@ -74,6 +76,8 @@ func _process(delta: float) -> void:
 			var ids := TownDefs.ids()
 			for i in ids.size():
 				g.sim.town[ids[i]] = n if n > 0 else [0, 1, 2, 3, 4, 5, 0, 2, 5][i]
+				g.sim.bmax[ids[i]] = g.sim.building_max(ids[i])
+				g.sim.bhp[ids[i]] = g.sim.bmax[ids[i]]
 			for h: HeroState in g.sim.heroes.values():
 				h.recompute()
 				h.gold = 900
@@ -88,6 +92,13 @@ func _process(delta: float) -> void:
 			var f: Dictionary = g.sim.fires[int(a)]
 			if f["lit"]:
 				g.sim.hit_fire(int(a), 1e9)
+	if g.sim != null and t < 1.0 and args.has("ruin"):
+		for id: String in str(args["ruin"]).split(","):
+			g.sim.hit_building(id, 1e9)
+	if g.sim != null and t < 1.0 and args.has("hurt"):
+		for id: String in str(args["hurt"]).split(","):
+			if not g.sim.ruins.has(id):
+				g.sim.bhp[id] = g.sim.building_max(id) * 0.45
 	if g.sim != null and args.has("kindle"):
 		g.sim.fires[int(args["kindle"])]["kindle"] = 0.55
 	if taken < times.size() and t >= float(times[taken]):

@@ -51,6 +51,8 @@ var meteors: Array = []
 var dark := false
 var curses := {}
 var draw_list: Array = []
+## Seconds left of each building's hit flash, by id.
+var hit_t := {}
 
 
 func _ready() -> void:
@@ -71,6 +73,10 @@ func _process(delta: float) -> void:
 		slowmo_t -= delta
 		dt *= 0.35
 	t += dt
+	for id: String in hit_t.keys():
+		hit_t[id] = float(hit_t[id]) - dt
+		if float(hit_t[id]) <= 0.0:
+			hit_t.erase(id)
 	_ease_mobs(dt)
 	_step_fx(dt)
 	queue_redraw()
@@ -259,9 +265,16 @@ func _event(e: Array) -> void:
 		"portal":
 			var at := MapData.portal(e[1])
 			_burst(at + Vector2(0, -40), ChapterDefs.get_def(chapter)["glow"], 50, 360.0, 1.0)
-		"hearth":
+		"bhit":
+			hit_t[e[1]] = 0.18
 			if randf() < 0.2:
-				Sfx.play("dark_take", 0.5)
+				var hp7 := TownDefs.foot(e[1]) + Vector2(randf_range(-60, 60), -randf_range(40, 140))
+				_burst(hp7, Color("b9a58a"), 5, 200.0, 0.4)
+				Sfx.play("stone", 0.5)
+		"ruin":
+			var rp := TownDefs.foot(e[1])
+			_burst(rp + Vector2(0, -70), Color("8a8078"), 60, 360.0, 1.4, Vector2(0, -60))
+			_burst(rp + Vector2(0, -40), Color("ff8a3c"), 30, 260.0, 0.9)
 		"fhit":
 			var fp := _fire_pos(e[1])
 			if fp != Vector2.INF:
@@ -278,7 +291,10 @@ func _event(e: Array) -> void:
 		"build":
 			var bp := TownDefs.foot(e[2])
 			_burst(bp + Vector2(0, -70), Color("ffd98a"), 46, 300.0, 1.0)
-			numbers.append({"pos": bp + Vector2(0, -TownDefs.DRAW - 10), "text": "Level %d" % int(e[3]) if int(e[3]) > 1 else "Built",
+			var btxt := "Level %d" % int(e[3]) if int(e[3]) > 1 else "Built"
+			if e.size() > 5 and e[5]:
+				btxt = "Rebuilt"
+			numbers.append({"pos": bp + Vector2(0, -TownDefs.DRAW - 10), "text": btxt,
 				"color": Color("ffd98a"), "size": 24.0, "life": 1.6, "vel": Vector2(0, -36)})
 		"snd":
 			Sfx.play(e[1], e[2])
@@ -392,6 +408,8 @@ func _on_boom(e: Array) -> void:
 			col = Color("9da3ff")
 		"war_cry":
 			col = Color("ffb347")
+		"talent":
+			col = Color("ffe9a8")
 		"blast":
 			col = Color("c6f56b")
 	var extra: Array = e.slice(5)
@@ -590,7 +608,6 @@ func _draw() -> void:
 		var size := get_viewport_rect().size / cam.zoom
 		view_rect = Rect2(cam.get_screen_center_position() - size * 0.5, size).grow(220)
 	_draw_portals()
-	_draw_hearth()
 	_draw_fires()
 	for z: Dictionary in zones.values():
 		_draw_zone(z)
@@ -663,15 +680,7 @@ func _draw_portals() -> void:
 			Kept.disc(self, p, 70.0, Color(0.1, 0.09, 0.08, 0.9))
 
 
-func _draw_hearth() -> void:
-	var p := MapData.HEARTH
-	var frac := 1.0
-	if game != null:
-		frac = game.hearth_frac()
-	_draw_flames(p, lerpf(0.35, 1.0, frac), 1.0)
-
-
-## A fire like the Hearth's, `size` times as big (its height and its glow)
+## A fire, `size` times a campfire's (its height and its glow)
 ## and as wide as `width` times it.
 func _draw_flames(p: Vector2, size: float, width: float, seed_t := 0.0) -> void:
 	var tt := t + seed_t
@@ -695,8 +704,7 @@ func _fire_pos(i: int) -> Vector2:
 	return fs[i][0] if i >= 0 and i < fs.size() else Vector2.INF
 
 
-## The road fires (Sim's "Road fires"): a stone ring with a fire 60% of the
-## Hearth's, its ring of control round it, and how near it is to going out
+## The road fires (Sim's "Road fires"): a stone ring with a small fire, its ring of control round it, and how near it is to going out
 ## or to catching again.
 func _draw_fires() -> void:
 	if game == null:
@@ -743,20 +751,58 @@ func _draw_fires() -> void:
 
 
 ## A Town building (TownDefs) in MatchRPG's art, its level's parts and all,
-## or its dark shape before it is built. Its name and level hang under it.
+## or its dark shape before it is built, or its rubble once it has fallen.
+## Its name and level hang under it, and its HP over it once it is hurt.
 func _draw_building(id: String) -> void:
 	var foot := TownDefs.foot(id)
 	var lv := 0
+	var frac := 1.0
+	var ruined := false
 	if game != null:
 		lv = TownDefs.level(game.state.get("town", {}), id)
+		frac = float(game.state.get("bhp", {}).get(id, 1.0))
+		ruined = (game.state.get("ruins", {}) as Dictionary).has(id)
 	var s := TownDefs.DRAW
-	var r := Rect2(foot - Vector2(s * 0.5, s * 0.94), Vector2(s, s))
+	var bname: String = TownDefs.get_def(id)["name"]
+	if ruined:
+		_draw_rubble(foot, s)
+		_text_outlined(foot + Vector2(0, 26), "%s (ruin)" % bname, 17.0, Color("ff9a7a"))
+		return
+	var shake := Vector2(randf_range(-3, 3), 0) if float(hit_t.get(id, 0.0)) > 0.0 else Vector2.ZERO
+	var r := Rect2(foot + shake - Vector2(s * 0.5, s * 0.94), Vector2(s, s))
 	# Not built: MatchRPG's dark shape of it, near the rock's own color.
 	BuildingIcon.draw_building(self, id, r, lv > 0, Color(0.16, 0.15, 0.2, 0.85), Color(0, 0, 0, 0.35), 0.0,
 		lv * TownDefs.ART_STEP)
-	var bname: String = TownDefs.get_def(id)["name"]
+	if float(hit_t.get(id, 0.0)) > 0.0:
+		Kept.rect(self, r.grow(-s * 0.18), Color(1.0, 0.35, 0.2, 0.18))
 	var label := "%s (not built)" % bname if lv == 0 else "%s  %d" % [bname, lv]
 	_text_outlined(foot + Vector2(0, 26), label, 17.0, Color("ffd98a") if lv > 0 else Color(0.85, 0.82, 0.9, 0.7))
+	if frac < 0.999:
+		var bar := Rect2(foot + Vector2(-60, -s - 6), Vector2(120, 10))
+		draw_rect(bar.grow(2), Color(0, 0, 0, 0.65))
+		var col := Color("7fd36a") if frac > 0.6 else (Color("f0c23c") if frac > 0.3 else Color("ff5a3d"))
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), col)
+
+
+## A fallen building: a heap of stones and beams, still smoking.
+func _draw_rubble(foot: Vector2, s: float) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(foot.x * 7.0 + foot.y)
+	Kept.oval(self, Rect2(foot - Vector2(s * 0.45, s * 0.2), Vector2(s * 0.9, s * 0.3)), Color(0, 0, 0, 0.35))
+	for k in 5:
+		var a := foot + Vector2(rng.randf_range(-s * 0.35, s * 0.35), -rng.randf_range(10, 50))
+		var b := a + Vector2.from_angle(rng.randf_range(-2.6, -0.5)) * rng.randf_range(40, 80)
+		draw_line(a, b, Color("4a3424"), 9.0)
+	for k in 22:
+		var p := foot + Vector2(rng.randf_range(-s * 0.4, s * 0.4), -rng.randf_range(0, 70) * (1.0 - absf(k - 11) / 14.0))
+		var rr := rng.randf_range(10, 22)
+		draw_circle(p, rr, Color("5c5650").darkened(rng.randf_range(0.0, 0.3)))
+		draw_circle(p + Vector2(-rr * 0.25, -rr * 0.3), rr * 0.45, Color("7a746c"))
+	for k in 3:
+		var ph := fmod(t * 0.4 + k / 3.0, 1.0)
+		Kept.disc(self, foot + Vector2(rng.randf_range(-40, 40) + sin(t + k) * 8.0, -60.0 - ph * 130.0), 14.0 + ph * 20.0,
+			Color(0.3, 0.28, 0.32, 0.35 * (1.0 - ph)))
+	draw_circle(foot + Vector2(-20, -20), 5.0, Color(1.0, 0.45, 0.15, 0.4 + 0.3 * sin(t * 5.0)))
 
 
 func _draw_shadows(view_rect: Rect2) -> void:
