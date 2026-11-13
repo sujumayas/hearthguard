@@ -1,6 +1,6 @@
 class_name Sim
 extends RefCounted
-## The game as the host runs it: mobs, damage, the Hearth, the waves. Only
+## The game as the host runs it: mobs, damage, the Town, the waves. Only
 ## the host has one. Every tick it fills `events` (what happened, for every
 ## screen to show) and the snapshot the clients draw the mobs from.
 ##
@@ -20,8 +20,6 @@ const DT := 1.0 / 30.0
 const GRID := 72.0
 const TOKENS_MELEE := 6
 const TOKENS_RANGED := 4
-const HEARTH_HP := 6500.0
-const HEARTH_R := 120.0
 ## Mobs below this share of HP die to any hit (the "execute" everyone has,
 ## so the last sliver never needs another swing). Talents raise it.
 const EXECUTE_BASE := 0.08
@@ -40,8 +38,6 @@ var projectiles: Array = []
 var zones: Array = []
 var later: Array = []
 var events: Array = []
-var hearth_hp := HEARTH_HP
-var hearth_max := HEARTH_HP
 var director: Director
 var grid := {}
 var used_tokens := {}
@@ -60,8 +56,13 @@ var multikill := {}
 ## The Town's building levels by id (TownDefs). Every HeroState holds this
 ## same dictionary, so a level built shows in every hero's stats.
 var town := {}
-## The Hearth's max HP before the Quarry's walls.
-var hearth_base := HEARTH_HP
+## Each Town building's HP by id, and the buildings that are ruins, with
+## the level each had when it fell (see "The Town" below).
+var bhp := {}
+var ruins := {}
+## Each building's max HP as last applied, so a change in it (a level, the
+## Quarry, the chapter) adds or takes the difference.
+var bmax := {}
 ## The road fires: two in each open corridor (MapData.fire_spots). Each is
 ## {pos, lane, lit, gone, hp, max, kindle}. See "Road fires" below.
 var fires: Array = []
@@ -88,9 +89,6 @@ func _init(seed_value: int, slots: Dictionary, shared_map: MapData = null) -> vo
 		h.tumble_charges = 1
 		heroes[slot] = h
 	players = maxi(1, heroes.size())
-	hearth_base = HEARTH_HP * (1.0 + 0.5 * (players - 1))
-	hearth_max = hearth_base
-	hearth_hp = hearth_max
 	var lanes: Array = heroes.keys()
 	lanes.sort()
 	for lane: int in lanes:
@@ -100,6 +98,11 @@ func _init(seed_value: int, slots: Dictionary, shared_map: MapData = null) -> vo
 	rescale_fires()
 	for f: Dictionary in fires:
 		f["hp"] = f["max"]
+	for id: String in TownDefs.ids():
+		bmax[id] = building_max(id)
+		bhp[id] = bmax[id]
+	# The map may be shared with a run before this one.
+	map.build_flow(standing())
 
 
 # --- The tick -------------------------------------------------------------
@@ -125,9 +128,9 @@ func step() -> void:
 		_audit_tokens()
 	_reap()
 	_step_multikills()
-	if hearth_hp <= 0.0 and over == "":
+	if ruins.size() >= TownDefs.ids().size() and over == "":
 		over = "defeat"
-		emit(["banner", "The Hearth is out", "The Town has fallen.", Color("b9b0c9")])
+		emit(["banner", "The Town has fallen", "Every building is a ruin.", Color("b9b0c9")])
 		emit(["snd", "gameover", 1.0])
 
 
@@ -747,8 +750,8 @@ func _step_mob(m: Mob) -> void:
 			_march(m)
 		Mob.State.CHASE:
 			_chase(m)
-		Mob.State.HEARTH:
-			_at_hearth(m)
+		Mob.State.SIEGE:
+			_at_building(m)
 		Mob.State.FIRE:
 			_at_fire(m)
 		Mob.State.CHARGE_WIND:
@@ -780,10 +783,10 @@ const MELEE_THREAT := 340.0
 
 
 ## How close a hero must be for a mob to notice it, and how far the mob
-## follows before it gives up and goes for the Hearth. Tied to the mob's own
+## follows before it gives up and goes for the Town. Tied to the mob's own
 ## reach: 20% past it for ranged mobs. Melee mobs get the same distance a
 ## typical ranged mob has (MELEE_THREAT), since twice a bite is too short to kite. A hero who stays out of that, or runs, leaves the
-## mob to the Hearth. Hitting a mob pulls it back (PROVOKE_TIME).
+## mob to the Town. Hitting a mob pulls it back (PROVOKE_TIME).
 func _threat_range(m: Mob) -> float:
 	if m.rank != "mob":
 		return BIG_AGGRO
@@ -799,7 +802,7 @@ func _leash(m: Mob) -> float:
 	return BIG_AGGRO * 2.2 if m.rank != "mob" else _threat_range(m)
 
 
-## A hero's hit turns a marching (or Hearth-bashing) mob on them, and keeps
+## A hero's hit turns a marching (or building-bashing) mob on them, and keeps
 ## one already on them from wandering off.
 func _provoke(m: Mob, slot: int) -> void:
 	if m.rank != "mob" or not m.alive():
@@ -810,7 +813,7 @@ func _provoke(m: Mob, slot: int) -> void:
 	if m.state == Mob.State.CHASE and m.target == slot:
 		m.provoke_t = PROVOKE_TIME
 		return
-	if m.state in [Mob.State.MARCH, Mob.State.HEARTH, Mob.State.FIRE] or (m.state == Mob.State.CHASE and not m.token):
+	if m.state in [Mob.State.MARCH, Mob.State.SIEGE, Mob.State.FIRE] or (m.state == Mob.State.CHASE and not m.token):
 		_turn_on(m, slot)
 		# The pack turns with it: marching mobs close by come too.
 		for o: Mob in mobs_near(m.pos, PACK_CALL):
@@ -821,6 +824,7 @@ func _provoke(m: Mob, slot: int) -> void:
 func _turn_on(m: Mob, slot: int) -> void:
 	_release(m)
 	m.fire = -1
+	m.bld = ""
 	m.state = Mob.State.CHASE
 	m.target = slot
 	m.chase_t = 0.0
@@ -840,12 +844,14 @@ func _march(m: Mob) -> void:
 			m.state = Mob.State.FIRE
 			m.fire = f
 			return
-		if m.pos.distance_to(MapData.HEARTH) < HEARTH_R + m.radius + 30.0:
-			m.state = Mob.State.HEARTH
+		var b := _building_near(m.pos, m.radius + 45.0)
+		if b != "":
+			m.state = Mob.State.SIEGE
+			m.bld = b
 			return
 	var dir := map.flow_at(m.pos)
 	if dir == Vector2.ZERO:
-		dir = (MapData.HEARTH - m.pos).normalized()
+		dir = (MapData.SQUARE - m.pos).normalized()
 	_move(m, dir, 1.0)
 
 
@@ -1043,26 +1049,32 @@ func _trait_hit(tr: String, h: HeroState, m: Mob) -> void:
 			h.burn_src = m.kind
 
 
-func _at_hearth(m: Mob) -> void:
+func _at_building(m: Mob) -> void:
 	if _think(m):
 		var h := nearest_hero(m.pos, _threat_range(m))
 		if h != null:
+			m.bld = ""
 			m.state = Mob.State.CHASE
 			m.target = h.slot
 			m.chase_t = 0.0
 			return
-	var d := m.pos.distance_to(MapData.HEARTH)
-	if d > HEARTH_R + m.radius + 10.0:
-		_move(m, (MapData.HEARTH - m.pos).normalized(), 1.0)
+	if m.bld == "" or ruins.has(m.bld):
+		m.bld = ""
+		m.wind = 0.0
+		m.state = Mob.State.MARCH
 		return
-	m.flip = MapData.HEARTH.x > m.pos.x
+	var d := TownDefs.body_dist(m.bld, m.pos)
+	if d > m.radius + 12.0:
+		var f := TownDefs.foot(m.bld) + Vector2(0, -30.0 - TownDefs.BODY * 0.5)
+		_move(m, _steer(m, (f - m.pos).normalized()), 1.0)
+		return
+	m.flip = TownDefs.foot(m.bld).x > m.pos.x
 	m.atk_cd -= DT
 	if m.wind > 0.0:
 		m.wind -= DT
 		if m.wind <= 0.0:
-			var dmg := m.atk * (0.5 if m.rank == "boss" else 1.0)
-			hearth_hp -= dmg
-			emit(["hearth", roundi(dmg)])
+			var mult := 1.5 if m.enraged or float(m.brain.get("war_cry_t", 0.0)) > 0.0 else 1.0
+			hit_building(m.bld, m.atk * mult * (0.5 if m.rank == "boss" else 1.0))
 		return
 	if m.atk_cd <= 0.0:
 		_start_attack(m)
@@ -1272,13 +1284,113 @@ func snuff_fires() -> void:
 
 # --- The Town --------------------------------------------------------------------
 
-## A hero pays for building `id`'s next level, standing at its door.
+## The buildings still standing, by id.
+func standing() -> Array:
+	var out: Array = []
+	for id: String in TownDefs.ids():
+		if not ruins.has(id):
+			out.append(id)
+	return out
+
+
+func building_max(id: String) -> float:
+	return TownDefs.max_hp(town, id, director.chapter if director != null else 0, players)
+
+
+## Every standing building's HP, and what they would have all at full.
+func town_hp() -> float:
+	var t := 0.0
+	for id: String in standing():
+		t += float(bhp.get(id, 0.0))
+	return t
+
+
+func town_max() -> float:
+	var t := 0.0
+	for id: String in TownDefs.ids():
+		t += building_max(id)
+	return t
+
+
+## The standing building whose body is within `pad` of `p`, or "".
+func _building_near(p: Vector2, pad: float) -> String:
+	if not MapData.TOWN.grow(120.0).has_point(p):
+		return ""
+	for id: String in TownDefs.ids():
+		if not ruins.has(id) and TownDefs.body_dist(id, p) < pad:
+			return id
+	return ""
+
+
+func hit_building(id: String, dmg: float) -> void:
+	if ruins.has(id) or over != "":
+		return
+	bhp[id] = float(bhp[id]) - dmg
+	emit(["bhit", id, roundi(dmg)])
+	if float(bhp[id]) <= 0.0:
+		_ruin(id)
+
+
+## Building `id` falls: its bonus is gone (its level is kept in `ruins` for
+## the rebuild) and the mobs look for the next one.
+func _ruin(id: String) -> void:
+	ruins[id] = TownDefs.level(town, id)
+	bhp[id] = 0.0
+	town.erase(id)
+	for h: HeroState in heroes.values():
+		h.recompute()
+	_town_changed(id)
+	map.build_flow(standing())
+	for m: Mob in mobs:
+		if m.bld == id:
+			m.bld = ""
+			m.wind = 0.0
+			m.state = Mob.State.MARCH
+	var left := TownDefs.ids().size() - ruins.size()
+	var bname: String = TownDefs.get_def(id)["name"]
+	emit(["ruin", id, left])
+	emit(["boom", "dark", TownDefs.foot(id).x, TownDefs.foot(id).y - 60.0, 200.0])
+	emit(["snd", "boulder_break", 1.0])
+	if left > 0:
+		emit(["banner", "The %s has fallen" % bname, ("Its bonus is gone. %d buildings stand." % left) if left > 1
+			else "One building stands. Lose it and the Town falls.", Color("ff8a5c")])
+
+
+## Keeps every building's share of HP when the chapter, a level or the
+## Quarry changes its max.
+func rescale_town() -> void:
+	for id: String in TownDefs.ids():
+		var mx := building_max(id)
+		if not ruins.has(id):
+			bhp[id] = minf(mx, float(bhp[id]) + maxf(0.0, mx - float(bmax.get(id, mx))))
+		bmax[id] = mx
+
+
+## The campfire mends every standing building by `share` of its max.
+func repair_town(share: float) -> void:
+	for id: String in standing():
+		bhp[id] = minf(building_max(id), float(bhp[id]) + building_max(id) * share)
+
+
+## What happens when a building's level or standing changes, beyond the
+## heroes' stats.
+func _town_changed(id: String) -> void:
+	match str(TownDefs.get_def(id)["key"]):
+		"walls":
+			rescale_town()
+		"fire_hp":
+			rescale_fires()
+
+
+## A hero pays for building `id`'s next level, standing at its door. A ruin
+## is rebuilt instead, at the level it had, with half its HP.
 func build(h: HeroState, id: String) -> void:
 	if not id in TownDefs.ids() or not h.alive:
 		return
 	if h.pos.distance_to(TownDefs.door(id)) > TownDefs.BUILD_R + 80.0:
 		return
-	var price := TownDefs.cost(town, id)
+	var ruined := ruins.has(id)
+	var price := TownDefs.rebuild_cost(id, int(ruins[id])) if ruined else TownDefs.cost(town, id)
 	if price < 0:
 		return
 	if h.gold < price:
@@ -1286,17 +1398,18 @@ func build(h: HeroState, id: String) -> void:
 		return
 	h.gold -= price
 	var lv := TownDefs.level(town, id) + 1
+	if ruined:
+		lv = maxi(1, int(ruins[id]))
+		ruins.erase(id)
 	town[id] = lv
 	for hh: HeroState in heroes.values():
 		hh.recompute()
-	match str(TownDefs.get_def(id)["key"]):
-		"hearth":
-			var before := hearth_max
-			hearth_max = hearth_base * (1.0 + TownDefs.bonus(town, "hearth"))
-			hearth_hp = minf(hearth_max, hearth_hp + hearth_max - before)
-		"fire_hp":
-			rescale_fires()
-	emit(["build", h.slot, id, lv, price])
+	rescale_town()
+	if ruined:
+		bhp[id] = building_max(id) * 0.5
+		map.build_flow(standing())
+	_town_changed(id)
+	emit(["build", h.slot, id, lv, price, ruined])
 	emit(["snd", "levelup", 0.9])
 	emit(["snd", "coin", 0.7])
 
@@ -1380,7 +1493,7 @@ func pack_mobs() -> PackedByteArray:
 	return buf
 
 
-## Everything but the mobs, small: heroes, the Hearth, the wave.
+## Everything but the mobs, small: heroes, the Town, the wave.
 func pack_state() -> Dictionary:
 	var hs := {}
 	for h: HeroState in heroes.values():
@@ -1394,5 +1507,9 @@ func pack_state() -> Dictionary:
 	for f: Dictionary in fires:
 		fs.append([f["pos"], 2 if f["gone"] else (1 if f["lit"] else 0), float(f["hp"]) / maxf(1.0, float(f["max"])),
 			f["kindle"], f["lane"]])
-	return {"heroes": hs, "hearth": hearth_hp, "hearth_max": hearth_max, "dir": director.view(), "boss": boss,
-		"alive": living_count(), "over": over, "t": time, "fires": fs, "town": town.duplicate(), "dark": dark}
+	var bs := {}
+	for id: String in TownDefs.ids():
+		bs[id] = clampf(float(bhp.get(id, 0.0)) / maxf(1.0, building_max(id)), 0.0, 1.0)
+	return {"heroes": hs, "town_hp": town_hp(), "town_max": town_max(), "dir": director.view(), "boss": boss,
+		"alive": living_count(), "over": over, "t": time, "fires": fs, "town": town.duplicate(), "dark": dark,
+		"bhp": bs, "ruins": ruins.duplicate()}

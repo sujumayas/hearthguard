@@ -97,8 +97,9 @@ func active_lanes() -> Array:
 	return out
 
 
-func hearth_frac() -> float:
-	return clampf(float(state.get("hearth", 1.0)) / maxf(1.0, float(state.get("hearth_max", 1.0))), 0.0, 1.0)
+## The share of the Town's HP still standing (every building at full is 1).
+func town_frac() -> float:
+	return clampf(float(state.get("town_hp", 1.0)) / maxf(1.0, float(state.get("town_max", 1.0))), 0.0, 1.0)
 
 
 # --- Network -----------------------------------------------------------------------
@@ -140,7 +141,7 @@ func log_summary() -> Dictionary:
 	var me: Dictionary = state.get("heroes", {}).get(my_slot, {})
 	var d: Dictionary = state.get("dir", {})
 	var out := {"chapter": int(d.get("chapter", 0)), "wave": int(d.get("wave", 0)),
-		"duration_s": snappedf(float(state.get("t", 0.0)), 0.1), "hearth_frac": snappedf(hearth_frac(), 0.001)}
+		"duration_s": snappedf(float(state.get("t", 0.0)), 0.1), "hearth_frac": snappedf(town_frac(), 0.001)}
 	if not me.is_empty():
 		out.merge({"level": int(me.get("level", 1)), "kills": int(me.get("kills", 0)), "deaths": int(me.get("deaths", 0)),
 			"damage_done": roundf(float(me.get("dmg", 0.0))), "damage_taken": roundf(float(me.get("taken", 0.0))),
@@ -327,7 +328,7 @@ func _apply_state(st: Dictionary) -> void:
 			# Late, so this game's last records have come in first.
 			PlayLog.finish("victory" if won else "defeat")
 			hud.show_end("Victory" if won else "Defeat",
-				"The Town stands. Astaroth is gone." if won else "The Hearth went out."))
+				"The Town stands. Astaroth is gone." if won else "Every building in the Town is a ruin."))
 
 
 func _handle(ev: Array) -> void:
@@ -374,8 +375,11 @@ func _handle(ev: Array) -> void:
 			"build":
 				var who: String = "You" if e[1] == my_slot else str(view.heroes.get(e[1], {}).get("name", "A player"))
 				var bname: String = TownDefs.get_def(e[2])["name"]
-				toast("%s %s the %s%s." % [who, "built" if int(e[3]) == 1 else "raised", bname,
-					"" if int(e[3]) == 1 else " to level %d" % int(e[3])])
+				if e.size() > 5 and e[5]:
+					toast("%s rebuilt the %s." % [who, bname])
+				else:
+					toast("%s %s the %s%s." % [who, "built" if int(e[3]) == 1 else "raised", bname,
+						"" if int(e[3]) == 1 else " to level %d" % int(e[3])])
 			"fire":
 				if not e[2] and not e[4]:
 					toast("A road fire in the %s went out." % MapData.CORRIDORS[int(e[3])]["name"])
@@ -506,14 +510,17 @@ func _draw_overlay() -> void:
 	ctrl.draw_overlay(overlay, get_global_mouse_position())
 	if view.dark:
 		# The dark (every road fire out, or the Deep Wyrm): only the light
-		# round each hero, the Hearth and any fire still lit.
+		# round each hero, each standing building and any fire still lit.
 		var c := cam.get_screen_center_position()
 		var size := get_viewport_rect().size / cam.zoom
 		var r := Rect2(c - size * 0.5, size).grow(60)
 		var holes: Array = []
 		for hp: Dictionary in view.heroes.values():
 			holes.append([hp["pos"], 260.0])
-		holes.append([MapData.HEARTH, 300.0 * lerpf(0.5, 1.0, hearth_frac())])
+		var ruins: Dictionary = state.get("ruins", {})
+		for id: String in TownDefs.ids():
+			if not ruins.has(id):
+				holes.append([TownDefs.foot(id) + Vector2(0, -60), 230.0])
 		for f: Array in state.get("fires", []):
 			if int(f[1]) == 1:
 				holes.append([f[0], 240.0])

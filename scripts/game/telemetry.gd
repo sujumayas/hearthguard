@@ -4,8 +4,13 @@ extends RefCounted
 ## and debugging. Game calls observe() after every tick with that tick's
 ## events, and sends what it returns along with them, so each player gets
 ## the records about their own hero and PlayLog stores those. Records about
-## the whole match (waves, the Hearth) have slot -1, and only the host
+## the whole match (waves, the Town) have slot -1, and only the host
 ## stores them.
+##
+## The Town's buildings took the Hearth's place as what the heroes defend.
+## The "hearth_*" fields keep their names so older plays and the dashboard
+## still line up: hearth_frac is now the share of the Town's HP standing,
+## and hearth_lost and hearth_hits what mobs did to its buildings.
 ##
 ## A record is ["log", slot, kind, t, chapter, wave, data]. The kinds:
 ##   death        how and by what, the hits of the last few seconds, the
@@ -15,7 +20,8 @@ extends RefCounted
 ##   hero_wave    one per hero per wave: damage done and taken (by source),
 ##                kills, deaths, casts per skill, potions, gold, time dead
 ##   wave_start   mobs, multipliers, the heroes' levels
-##   wave_end     length, what the Hearth lost, mobs left, early calls
+##   wave_end     length, what the Town lost, mobs left, early calls
+##   ruin         a building fell: which, and how many still stand
 ##   game_over    the outcome, with every hero's final state
 
 var sim: Sim
@@ -81,15 +87,18 @@ func observe(ev: Array) -> Array:
 					casts[slot][e[2]] += 1
 			"build":
 				if h != null:
-					out.append(_rec(slot, "build", {"building": e[2], "level": e[3], "price": e[4], "gold_left": h.gold}))
+					out.append(_rec(slot, "build", {"building": e[2], "level": e[3], "price": e[4], "gold_left": h.gold,
+						"rebuilt": e[5]}))
 			"fire":
 				# e[1] is the fire's index here, not a slot: a match record.
 				out.append(_rec(-1, "road_fire", {"fire": e[1], "lit": e[2], "lane": e[3], "gone": e[4]}))
 			"dark":
 				out.append(_rec(-1, "dark", {"on": e[1]}))
-			"hearth":
-				hearth_lost += float(e[1])
+			"bhit":
+				hearth_lost += float(e[2])
 				hearth_hits += 1
+			"ruin":
+				out.append(_rec(-1, "ruin", {"building": e[1], "standing": e[2]}))
 			"call":
 				calls += 1
 	var in_wave := sim.director.phase == Director.Phase.WAVE
@@ -118,7 +127,7 @@ func _rec(slot: int, kind: String, data: Dictionary) -> Array:
 func _open_wave(out: Array) -> void:
 	wave_open = true
 	var d := sim.director
-	wave_info = {"t0": sim.time, "hearth0": sim.hearth_hp, "chapter": d.chapter, "wave": d.wave}
+	wave_info = {"t0": sim.time, "hearth0": sim.town_hp(), "chapter": d.chapter, "wave": d.wave}
 	hearth_lost = 0.0
 	hearth_hits = 0
 	var levels := {}
@@ -241,7 +250,7 @@ func _death(h: HeroState) -> Dictionary:
 		"boss": boss,
 		"allies_alive": allies,
 		"nearest_ally": ally_dist,
-		"dist_hearth": roundf(h.pos.distance_to(MapData.HEARTH)),
+		"dist_hearth": roundf(h.pos.distance_to(MapData.SQUARE)),
 		"hearth_frac": _hearth_frac(),
 		"phase": Director.Phase.keys()[sim.director.phase],
 		"respawn_s": h.respawn_t,
@@ -269,4 +278,4 @@ static func hero_state(h: HeroState) -> Dictionary:
 
 
 func _hearth_frac() -> float:
-	return snappedf(clampf(sim.hearth_hp / sim.hearth_max, 0.0, 1.0), 0.001)
+	return snappedf(clampf(sim.town_hp() / maxf(1.0, sim.town_max()), 0.0, 1.0), 0.001)

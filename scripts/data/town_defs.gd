@@ -1,9 +1,16 @@
 class_name TownDefs
 extends RefCounted
-## The Town round the Hearth: MatchRPG's nine buildings (its UpgradeDefs),
-## each standing on the plaza's rim. Every building starts dark and empty.
-## Gold activates it (level 1) and levels it up to MAX. The Town is shared:
-## any hero can pay, and every hero gets the bonus.
+## The Town: MatchRPG's nine buildings (its UpgradeDefs), laid out along
+## its streets like MatchRPG's Town screen turned upside down, so its open
+## end faces north to the Crossroads and the Mage Tower stands at the back.
+## Every building starts dark and empty. Gold activates it (level 1) and
+## levels it up to MAX. The Town is shared: any hero can pay, and every hero
+## gets the bonus.
+##
+## The buildings are what the heroes defend. Mobs that get past the heroes
+## walk to the nearest standing building and bash it. A building at 0 HP is
+## a ruin and gives nothing until a hero pays to rebuild it. When all nine
+## are ruins, the Town has fallen and the run is lost.
 ##
 ## MatchRPG's bonuses are moved to this game. Its Barracks, Forge, Mage
 ## Tower, Armory and Mint give what they give there. Its Tinker, Woodcutter
@@ -31,8 +38,8 @@ const BUILDINGS := [
 		"desc": "+5% damage for every hero, per level"},
 	{"id": "locksmith", "name": "Tinker", "cost": 110, "per": 0.3, "key": "fire_hp",
 		"desc": "Road fires: +30% HP and kindle speed, per level"},
-	{"id": "quarry", "name": "Quarry", "cost": 120, "per": 0.12, "key": "hearth",
-		"desc": "Stone walls: +12% Hearth max HP, per level"},
+	{"id": "quarry", "name": "Quarry", "cost": 120, "per": 0.15, "key": "walls",
+		"desc": "Stone walls: +15% HP for every building, per level"},
 	{"id": "alchemist", "name": "Alchemist", "cost": 100, "per": 0.08, "key": "discount",
 		"desc": "Potions 8% off per level, sold at its door"},
 	{"id": "mint", "name": "Mint", "cost": 120, "per": 0.12, "key": "gold",
@@ -41,19 +48,39 @@ const BUILDINGS := [
 		"desc": "Road fires heal 30% more, per level"},
 ]
 
-## Where each building's foot is, in the order above: on a ring 480 px out
-## from the Hearth. One stands in each gap between the gates up north (the
-## gates are west at 198 degrees, north at 270, east at 342), and seven in a
-## row along the south, backed by the town wall (WALL_IN, WALL_FROM to
-## WALL_TO), so there is no notch between them to get stuck in.
-const RING := 480.0
-const ANGLES := [234.0, 36.0, 306.0, 9.0, 171.0, 63.0, 90.0, 117.0, 144.0]
-const WALL_IN := 420.0
-const WALL_FROM := 9.0
-const WALL_TO := 171.0
-## How wide a building is drawn, and how much of it is solid.
-const DRAW := 176.0
-const SOLID_R := 66.0
+## Where each building's foot is (the middle of its front, on the ground).
+## Rows from north to south, as MatchRPG's Town screen flipped: the Mint and
+## the Alchemist meet the road from the Crossroads first, then the
+## Woodcutter, Forge, Tinker and Quarry, and the Barracks, Mage Tower and
+## Armory at the back. Each row's doors open south onto its street.
+const FEET := {
+	"mint": Vector2(1560, 1960), "alchemist": Vector2(2440, 1960),
+	"woodcutter": Vector2(1290, 2350), "forge": Vector2(1680, 2340),
+	"locksmith": Vector2(2320, 2340), "quarry": Vector2(2710, 2350),
+	"barracks": Vector2(1430, 2730), "tower": Vector2(2000, 2710), "armory": Vector2(2570, 2730),
+}
+## The streets, as polylines, drawn under the buildings (MapView). The
+## first is the road from the Crossroads, down the middle to the Mage Tower.
+const STREETS := [
+	[Vector2(2000, 1380), Vector2(2000, 1720), Vector2(1975, 2030), Vector2(2020, 2270), Vector2(2000, 2415)],
+	[Vector2(1390, 2035), Vector2(1700, 2030), Vector2(2300, 2040), Vector2(2610, 2035)],
+	[Vector2(1160, 2418), Vector2(1700, 2410), Vector2(2300, 2410), Vector2(2840, 2420)],
+	[Vector2(1730, 2410), Vector2(1712, 2600), Vector2(1735, 2800)],
+	[Vector2(2270, 2410), Vector2(2290, 2600), Vector2(2265, 2800)],
+	[Vector2(1280, 2802), Vector2(1700, 2798), Vector2(2300, 2800), Vector2(2720, 2805)],
+]
+## How wide a building is drawn, and its solid body: a capsule SOLID_R wide
+## from just above its foot up BODY pixels.
+const DRAW := 236.0
+const SOLID_R := 78.0
+const BODY := 140.0
+## A building's HP at chapter 1 for one player. It grows with the chapter
+## as fast as mob attack does (ChapterDefs.ATK_SCALE), so a leak costs about
+## the same number of hits in every chapter, and with the party
+## (HP_PER_PLAYER), its level and the Quarry.
+const HP := 1500.0
+const HP_PER_PLAYER := 0.5
+const HP_PER_LEVEL := 0.15
 
 
 static func get_def(id: String) -> Dictionary:
@@ -71,18 +98,32 @@ static func ids() -> Array:
 
 
 static func foot(id: String) -> Vector2:
-	var i := ids().find(id)
-	return MapData.HEARTH + Vector2.from_angle(deg_to_rad(ANGLES[i])) * RING
+	return FEET[id]
 
 
-## Which way the building faces: toward the Hearth.
-static func facing(id: String) -> Vector2:
-	return (MapData.HEARTH - foot(id)).normalized()
-
-
-## Where a hero stands to build it: just in front of it, toward the Hearth.
+## Where a hero stands to build it: on the street in front of its door.
 static func door(id: String) -> Vector2:
-	return foot(id) + facing(id) * 125.0
+	return foot(id) + Vector2(0, 70)
+
+
+## How far `p` is from building `id`'s solid body (0 or less inside it).
+static func body_dist(id: String, p: Vector2) -> float:
+	var f := foot(id) + Vector2(0, -30)
+	return MapData._seg_dist(p, f, f - Vector2(0, BODY)) - SOLID_R
+
+
+## The building whose body `p` is within `pad` of, or "".
+static func solid_at(p: Vector2, pad: float) -> String:
+	for id: String in ids():
+		if body_dist(id, p) < pad:
+			return id
+	return ""
+
+
+## Building `id`'s max HP in chapter `c` for `players` heroes.
+static func max_hp(town: Dictionary, id: String, c: int, players: int) -> float:
+	return HP * float(ChapterDefs.ATK_SCALE[clampi(c, 0, 4)]) * (1.0 + HP_PER_PLAYER * (players - 1)) \
+		* (1.0 + HP_PER_LEVEL * level(town, id)) * (1.0 + bonus(town, "walls"))
 
 
 static func level(town: Dictionary, id: String) -> int:
@@ -95,6 +136,12 @@ static func cost(town: Dictionary, id: String) -> int:
 	if lv >= MAX:
 		return -1
 	return roundi(float(get_def(id)["cost"]) * pow(COST_GROWTH, lv) / 5.0) * 5
+
+
+## The gold to rebuild a ruin that fell at level `lv`: that level's price
+## again (an unbuilt ruin comes back at level 1, for the activation price).
+static func rebuild_cost(id: String, lv: int) -> int:
+	return roundi(float(get_def(id)["cost"]) * pow(COST_GROWTH, maxi(0, lv - 1)) / 5.0) * 5
 
 
 ## A building's bonus at its level now (0 when not built): the share or the
@@ -139,8 +186,8 @@ static func next_text(town: Dictionary, id: String) -> String:
 			return "+%d%% damage" % roundi(per * lv * 100.0)
 		"fire_hp":
 			return "road fires +%d%% HP and kindle speed" % roundi(per * lv * 100.0)
-		"hearth":
-			return "+%d%% Hearth HP" % roundi(per * lv * 100.0)
+		"walls":
+			return "+%d%% HP for every building" % roundi(per * lv * 100.0)
 		"discount":
 			return "potions %d%% off" % roundi(per * lv * 100.0)
 		"gold":

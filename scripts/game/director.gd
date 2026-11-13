@@ -16,6 +16,9 @@ const CAMP_TIME := 25.0
 const CLEAR_SHARE := 0.15
 const CLEAR_WAIT := 35.0
 const BOSS_ADDS_EVERY := 5.0
+## The campfire mends every standing building by this share of its max.
+## Ruins stay ruins until a hero pays to rebuild them.
+const CAMP_REPAIR := 0.5
 
 var sim: Sim
 var phase := Phase.INTRO
@@ -72,6 +75,7 @@ func step(dt: float) -> void:
 				phase = Phase.INTRO
 				t = INTRO_TIME
 				sim.rescale_fires()
+				sim.rescale_town()
 				_announce_chapter()
 				if chapter == Sim.dark_chapter():
 					# After the world's own banner: the dark takes the road.
@@ -114,20 +118,28 @@ func _start_wave() -> void:
 		roster = {}
 		for id: String in ch["opening"]:
 			roster[id] = 1
+	var tough: float = ChapterDefs.shape(wave)["tough"]
+	var soft := _tier_roster(roster, true)
+	var hard := _tier_roster(roster, false)
 	for lane: int in ls:
 		if wave == ChapterDefs.HORDE_WAVE:
-			_horde(lane, n, roster)
+			_horde(lane, n, soft, hard, tough)
 			continue
 		var at := 0.5
 		var left := n
 		while left > 0:
-			# Packs: 3-8 at once, the horde in bigger bites.
-			# Packs grow with the chapters: the late game comes in crowds.
+			# Packs: 3-8 at once, growing with the chapters, so the late game
+			# comes in crowds. Each is fodder or a tough pack (WAVE_SHAPE's
+			# `tough`): a swarm to mow, then something that pushes back.
 			var pack := mini(left, sim.rng.randi_range(3, 8) + chapter * 2)
-			var kind := _roll(roster)
+			var from := hard if sim.rng.randf() < tough else soft
+			if from == hard:
+				# Tough packs come smaller: they are worth more each.
+				pack = mini(left, maxi(2, pack * 2 / 3))
+			var kind := _roll(from)
 			for i in pack:
 				# A pack is mostly one kind, with a stray.
-				queue.append([at + i * 0.12, kind if sim.rng.randf() < 0.75 else _roll(roster), lane])
+				queue.append([at + i * 0.12, kind if sim.rng.randf() < 0.75 else _roll(from), lane])
 			left -= pack
 			at += span * float(pack) / n
 		if ChapterDefs.ELITE_WAVES.has(wave):
@@ -139,13 +151,24 @@ func _start_wave() -> void:
 ## The horde: three surges, each a wall of mobs out of the portal at once,
 ## a third of the wave apiece. It's meant to be more than one hero can
 ## stop; the gate, the abilities and the potions are for this.
-func _horde(lane: int, n: int, roster: Dictionary) -> void:
+func _horde(lane: int, n: int, soft: Dictionary, hard: Dictionary, tough: float) -> void:
 	var surges := 3
 	for k in surges:
 		var count := n / surges + (n % surges if k == surges - 1 else 0)
-		var kind := _roll(roster)
+		var kind := _roll(soft)
 		for i in count:
-			queue.append([1.0 + k * 9.0 + i * 0.05, kind if sim.rng.randf() < 0.6 else _roll(roster), lane])
+			var from := hard if sim.rng.randf() < tough else soft
+			queue.append([1.0 + k * 9.0 + i * 0.05, kind if from == soft and sim.rng.randf() < 0.6 else _roll(from), lane])
+
+
+## The roster's fodder (`soft`) or the rest. A roster with none of one kind
+## gives the whole roster.
+func _tier_roster(roster: Dictionary, soft: bool) -> Dictionary:
+	var out := {}
+	for k: String in roster:
+		if (ChapterDefs.tier(k) == "soft") == soft:
+			out[k] = roster[k]
+	return out if not out.is_empty() else roster
 
 
 func _roll(roster: Dictionary) -> String:
@@ -168,7 +191,8 @@ func _step_wave(dt: float) -> void:
 		var lane: int = q[2]
 		# World bosses' stats are already this game's, chapter and all.
 		var boss: bool = MobDefs.rank_of(q[1]) == "boss"
-		var m := sim.spawn(q[1], MapData.portal(lane), lane, 1.0 if boss else hp_mult(), 1.0 if boss else atk_mult())
+		var m := sim.spawn(q[1], MapData.portal(lane), lane, 1.0 if boss else hp_mult() * ChapterDefs.tier_hp(q[1], chapter),
+			1.0 if boss else atk_mult())
 		spawned += 1
 		if m.rank == "boss":
 			boss_id = m.id
@@ -197,7 +221,7 @@ func _step_boss_wave(dt: float) -> void:
 			for lane: int in lanes():
 				var kind := _roll(roster)
 				for i in 3 + chapter:
-					sim.spawn(kind, MapData.portal(lane), lane, hp_mult() * 0.8, atk_mult())
+					sim.spawn(kind, MapData.portal(lane), lane, hp_mult() * ChapterDefs.tier_hp(kind, chapter), atk_mult())
 
 
 func _end_wave() -> void:
@@ -216,7 +240,7 @@ func _chapter_cleared() -> void:
 	if chapter >= ChapterDefs.count() - 1:
 		phase = Phase.VICTORY
 		sim.over = "victory"
-		sim.emit(["banner", "The Town stands", "Astaroth is gone, and the Hearth still burns.", Color("ffd98a")])
+		sim.emit(["banner", "Dawn", "Astaroth is gone, and the Town still stands.", Color("ffd98a")])
 		sim.emit(["music", "music_results"])
 		sim.emit(["snd", "achievement", 1.0])
 		return
@@ -224,14 +248,14 @@ func _chapter_cleared() -> void:
 	t = CAMP_TIME
 	sim.boss_dark = false
 	sim.relight_fires()
-	sim.hearth_hp = minf(sim.hearth_max, sim.hearth_hp + sim.hearth_max * 0.5)
+	sim.repair_town(CAMP_REPAIR)
 	for h: HeroState in sim.heroes.values():
 		if h.alive:
 			h.hp = h.max_hp()
 		h.cds = [0.0, 0.0, 0.0, 0.0]
 	var lit := chapter < Sim.dark_chapter()
-	sim.emit(["banner", "The campfire", ("Rest. The road fires burn again, and the Alchemist is open for %d seconds." if lit
-		else "Rest. The Alchemist is open for %d seconds.") % int(CAMP_TIME), Color("f0a23c")])
+	sim.emit(["banner", "The campfire", ("Rest. The road fires burn again and the Town is mended. %d seconds." if lit
+		else "Rest. The Town is mended. %d seconds.") % int(CAMP_TIME), Color("f0a23c")])
 	sim.emit(["music", "music_menu"])
 	sim.emit(["snd", "campfire", 1.0])
 	sim.emit(["camp", true])

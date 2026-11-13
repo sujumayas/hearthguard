@@ -15,13 +15,48 @@ const ELITE_WAVES := {2: 0, 4: 1}
 const HORDE_WAVE := 3
 const BOSS_WAVE := 5
 
-## Mob HP and attack, chapter by chapter. Heroes grow faster than this
-## inside a chapter, so its end feels like mowing, and the next one's first
-## wave pushes back.
-const HP_SCALE := [1.0, 2.3, 4.6, 8.0, 13.0]
-const ATK_SCALE := [1.0, 1.6, 2.4, 3.3, 4.4]
-## Each wave inside a chapter adds this much to both.
-const WAVE_STEP := 0.07
+## Mob HP and attack, chapter by chapter. Each step is a push-back the
+## heroes' new levels, talents and Town have to answer. Talents, ability
+## ranks and the Town multiply hero power far past what levels alone give,
+## so these climb steeply: with the old [1, 2.3, 4.6, 8, 13] a Mage that
+## built the Town cleared all 30 waves without dying. Tuned with the bot
+## (tests/sim_bot.gd) on seeds 7, 11 and 23: a building Mage bot wins with
+## 4-6 deaths, a building Fighter bot wins about one run in three, and a
+## bot that never builds falls in chapters 3-5. Static vars, not consts, so
+## the bot (--hp=... --atk=...) can try others.
+static var HP_SCALE: Array = [1.0, 2.9, 7.0, 14.5, 28.0]
+static var ATK_SCALE: Array = [1.0, 1.8, 3.0, 4.7, 6.8]
+
+## The shape of a chapter, wave by wave. It is jagged on purpose (the
+## curves study, A1 and A2): a push-back, a mow, a spike, the Horde, the
+## hardest regular wave, then the boss. `hp` and `atk` multiply the
+## chapter's scale. `tough` is the share of packs drawn from the roster's
+## brutes, chargers and casters instead of its fodder. `more` multiplies
+## the count.
+const WAVE_SHAPE := [
+	# Push-back: the chapter's new numbers, a mixed crowd.
+	{"hp": 1.05, "atk": 1.0, "tough": 0.4, "more": 1.1},
+	# The mow: a big crowd of fodder, to feel the levels just earned.
+	{"hp": 0.8, "atk": 0.9, "tough": 0.1, "more": 1.25},
+	# The first elite, with a guard of brutes.
+	{"hp": 1.15, "atk": 1.1, "tough": 0.45, "more": 1.0},
+	# The Horde: very many and soft, in three surges.
+	{"hp": 0.7, "atk": 1.0, "tough": 0.15, "more": 1.0},
+	# The wall: the second elite and the hardest crowd of the chapter.
+	{"hp": 1.3, "atk": 1.25, "tough": 0.55, "more": 0.9},
+	# The boss's adds.
+	{"hp": 0.9, "atk": 1.15, "tough": 0.35, "more": 1.0},
+]
+
+## A mob's tier, from its brain: fodder is "soft", casters and archers
+## "mid", brutes and chargers "tough". Soft mobs get softer next to the
+## chapter each world, so there is always something to mow, and tough ones
+## harder, so something always pushes back.
+const TIER_HP := {
+	"soft": [1.0, 0.9, 0.82, 0.76, 0.7],
+	"mid": [1.0, 1.0, 1.0, 1.0, 1.0],
+	"tough": [1.15, 1.35, 1.55, 1.75, 1.95],
+}
 
 const CHAPTERS := [
 	{"world": "The Underground Forest", "music": "forest",
@@ -76,7 +111,7 @@ const WAVE_MORE := 1.08
 
 
 static func wave_count(c: int, w: int) -> int:
-	return roundi(_base_count(c, w) * WAVE_MORE)
+	return roundi(_base_count(c, w) * WAVE_MORE * float(shape(w)["more"]))
 
 
 static func _base_count(c: int, w: int) -> int:
@@ -99,12 +134,33 @@ static func wave_span(w: int) -> float:
 	return 28.0
 
 
+static func shape(w: int) -> Dictionary:
+	return WAVE_SHAPE[clampi(w, 0, WAVE_SHAPE.size() - 1)]
+
+
 static func hp_mult(c: int, w: int) -> float:
-	return HP_SCALE[clampi(c, 0, 4)] * (1.0 + WAVE_STEP * w)
+	return HP_SCALE[clampi(c, 0, 4)] * float(shape(w)["hp"])
 
 
 static func atk_mult(c: int, w: int) -> float:
-	return ATK_SCALE[clampi(c, 0, 4)] * (1.0 + WAVE_STEP * w)
+	return ATK_SCALE[clampi(c, 0, 4)] * float(shape(w)["atk"])
+
+
+static func tier(kind: String) -> String:
+	match str(MobDefs.get_def(kind).get("ai", "fodder")):
+		"fodder":
+			return "soft"
+		"brute", "charger":
+			return "tough"
+	return "mid"
+
+
+## What a plain mob's tier does to its HP in chapter `c` (elites and bosses
+## have their own numbers).
+static func tier_hp(kind: String, c: int) -> float:
+	if MobDefs.rank_of(kind) != "mob":
+		return 1.0
+	return float(TIER_HP[tier(kind)][clampi(c, 0, 4)])
 
 
 static func wave_title(c: int, w: int) -> String:
